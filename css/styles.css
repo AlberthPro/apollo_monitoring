@@ -386,31 +386,142 @@ select:focus-visible {
 }
 
 /* ---- KPIs (Minimalistas con indicador sutil) ---- */
+
+/* ---- KPIs (Estilo Liquid Glass con gradiente identificativo) ---- */
 .kpi {
     position: relative;
+    overflow: hidden;
+    border-radius: 14px;
+    /* Base translúcida tipo cristal */
+    background: linear-gradient(
+        135deg,
+        rgba(255, 255, 255, 0.88) 0%,
+        rgba(255, 255, 255, 0.55) 100%
+    );
+    backdrop-filter: blur(16px) saturate(180%);
+    -webkit-backdrop-filter: blur(16px) saturate(180%);
+    /* Borde luminoso y profundidad */
+    border: 1px solid rgba(255, 255, 255, 0.85);
+    box-shadow:
+        0 8px 24px -6px rgba(24, 27, 32, 0.06),
+        inset 0 1px 1px rgba(255, 255, 255, 0.95);
+    transition: transform 0.25s cubic-bezier(0.22, 1, 0.36, 1),
+                box-shadow 0.25s cubic-bezier(0.22, 1, 0.36, 1),
+                border-color 0.25s ease;
+    z-index: 1;
+}
+
+/* Orbe de luz líquida (gradiente ambiental de fondo) */
+.kpi::before {
+    content: "";
+    position: absolute;
+    top: -35%;
+    right: -20%;
+    width: 140px;
+    height: 140px;
+    border-radius: 50%;
+    background: radial-gradient(circle, var(--kpi-glow, transparent) 0%, transparent 72%);
+    opacity: 0.45;
+    filter: blur(12px);
+    pointer-events: none;
+    z-index: -1;
+    transition: transform 0.35s ease, opacity 0.35s ease;
+}
+
+/* Barra/reflejo inferior líquido sutil */
+.kpi::after {
+    content: "";
+    position: absolute;
+    bottom: 0;
+    left: 16px;
+    right: 16px;
+    height: 3px;
+    border-radius: 3px 3px 0 0;
+    background: linear-gradient(90deg, var(--kpi-accent, var(--line)), transparent);
+    opacity: 0.85;
+}
+
+.kpi:hover {
+    transform: translateY(-3px);
+    border-color: var(--kpi-border, rgba(255, 255, 255, 1));
+    box-shadow:
+        0 14px 30px -8px var(--kpi-shadow, rgba(24, 27, 32, 0.12)),
+        inset 0 1px 1px rgba(255, 255, 255, 1);
+}
+
+.kpi:hover::before {
+    transform: scale(1.2) translate(-6px, 6px);
+    opacity: 0.65;
 }
 
 .kpi small {
+    display: block;
     font-size: 12px;
-    font-weight: 500;
+    font-weight: 600;
+    letter-spacing: 0.1px;
     color: var(--muted);
 }
 
 .kpi b {
     display: block;
-    margin-top: 6px;
-    font-size: 26px;
-    font-weight: 700;
-    letter-spacing: -0.5px;
-    color: var(--ink);
+    margin-top: 8px;
+    font-size: 28px;
+    font-weight: 800;
+    letter-spacing: -0.6px;
+    /* Gradiente sutil en el número */
+    background: linear-gradient(135deg, var(--ink) 35%, var(--kpi-accent, var(--ink)) 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
 }
 
-.kpi-brand  { border-left: 3px solid var(--brand); }
-.kpi-sky    { border-left: 3px solid var(--sky); }
-.kpi-violet { border-left: 3px solid var(--violet); }
-.kpi-ok     { border-left: 3px solid var(--ok); }
-.kpi-bad    { border-left: 3px solid var(--bad); }
-.kpi-warn   { border-left: 3px solid var(--warn); }
+/* --- Variantes de Gradiente Identificativo por KPI --- */
+.kpi-brand {
+    --kpi-accent: var(--brand);
+    --kpi-glow: rgba(99, 71, 209, 0.55);
+    --kpi-border: rgba(99, 71, 209, 0.35);
+    --kpi-shadow: rgba(99, 71, 209, 0.18);
+    background: linear-gradient(135deg, rgba(255, 255, 255, 0.9) 0%, rgba(242, 239, 254, 0.72) 100%);
+}
+
+.kpi-ok {
+    --kpi-accent: var(--ok);
+    --kpi-glow: rgba(22, 163, 74, 0.5);
+    --kpi-border: rgba(22, 163, 74, 0.35);
+    --kpi-shadow: rgba(22, 163, 74, 0.16);
+    background: linear-gradient(135deg, rgba(255, 255, 255, 0.9) 0%, rgba(220, 252, 231, 0.68) 100%);
+}
+
+.kpi-sky {
+    --kpi-accent: var(--sky);
+    --kpi-glow: rgba(2, 132, 199, 0.5);
+    --kpi-border: rgba(2, 132, 199, 0.35);
+    --kpi-shadow: rgba(2, 132, 199, 0.16);
+    background: linear-gradient(135deg, rgba(255, 255, 255, 0.9) 0%, rgba(224, 242, 254, 0.72) 100%);
+}
+
+.kpi-warn {
+    --kpi-accent: var(--warn);
+    --kpi-glow: rgba(217, 119, 6, 0.5);
+    --kpi-border: rgba(217, 119, 6, 0.35);
+    --kpi-shadow: rgba(217, 119, 6, 0.16);
+    background: linear-gradient(135deg, rgba(255, 255, 255, 0.9) 0%, rgba(254, 243, 199, 0.72) 100%);
+}
+
+.kpi-bad {
+    --kpi-accent: var(--bad);
+    --kpi-glow: rgba(220, 38, 38, 0.5);
+    --kpi-border: rgba(220, 38, 38, 0.35);
+    --kpi-shadow: rgba(220, 38, 38, 0.18);
+    background: linear-gradient(135deg, rgba(255, 255, 255, 0.9) 0%, rgba(254, 226, 226, 0.72) 100%);
+}
+
+.kpi-violet {
+    --kpi-accent: var(--violet);
+    --kpi-glow: rgba(124, 58, 237, 0.5);
+    --kpi-border: rgba(124, 58, 237, 0.35);
+    --kpi-shadow: rgba(124, 58, 237, 0.16);
+    background: linear-gradient(135deg, rgba(255, 255, 255, 0.9) 0%, rgba(243, 232, 255, 0.72) 100%);
+}
 
 /* ==========================================================
    8. TABLAS (Estilo cuadrícula limpia de datos)
