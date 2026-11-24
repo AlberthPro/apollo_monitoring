@@ -1,0 +1,561 @@
+<!DOCTYPE html>
+<html lang="es">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Observabilidad de APIs de negocio</title>
+    <link rel="icon" type="image/x-icon" href="https://cloudappi.net/wp-content/uploads/2026/03/tecnologias-cloudappi-_2_-768x432.webp">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Roboto:ital,wght@0,100..900;1,100..900&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200&icon_names=content_copy" />
+
+    <link rel="stylesheet" href="css/styles.css">
+    <link rel="stylesheet" href="css/icons.css">
+
+    <!-- Librería de gráficas -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+</head>
+
+<body>
+    <!-- Contenedor del aviso -->
+  <div id="avisoLiquidGlass" class="overlay-glass">
+    <div class="card-liquid-glass">
+      <!-- Icono SVG de cerrar -->
+      <button class="btn-close-icon" onclick="cerrarPermanente()" aria-label="Cerrar aviso">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+          <line x1="18" y1="6" x2="6" y2="18"></line>
+          <line x1="6" y1="6" x2="18" y2="18"></line>
+        </svg>
+      </button>
+
+      <h3>Aviso del sistema</h3>
+      <p>Diariamente a las <strong>6:00 PM</strong> se restablece el log.</p>
+    </div>
+  </div>
+    <!-- indicador de carga incial -->
+    <div id="globalLoader"></div>
+    <!-- ========== ENCABEZADO ========== -->
+    <header class="app-header">
+        <div class="logo">
+            <span class="logo-icon">
+                <img src="https://cloudappi.net/wp-content/uploads/2026/03/tecnologias-cloudappi-_2_-768x432.webp" style="width: 200%;" alt="logo" />
+            </span>
+            Monitoreo Activo Proceso de Negocio en webMethods
+            <span class="env-badge" id="envBadge" data-env="QA">QA</span>
+        </div>
+
+        <div class="live-status">
+            <span class="dot" id="statusDot"></span>
+            <span id="statusText">Conectando…</span>
+        </div>
+
+        <!-- Para agregar un botón: crea uno aquí y conéctalo en app.js, sección "EVENTOS" -->
+        <button class="btn" id="btnPause">Pausar</button>
+        <button class="btn btn-solid" id="btnConfig">Configuración</button>
+    </header>
+
+    <!-- ========== PANEL DE CONFIGURACIÓN ========== -->
+    <div class="config-panel" id="configPanel">
+        <!-- Ambiente: define el host y las credenciales (ver CONFIG.environments en app.js) -->
+        <div class="env-switch" role="group" aria-label="Ambiente">
+            <button class="env-btn" data-env="DEV">DEV</button>
+            <button class="env-btn active" data-env="QA">QA</button>
+            <button class="env-btn" data-env="PROD">PROD</button>
+        </div>
+
+        <input type="text" id="inputBaseUrl" aria-label="URL base del API" readonly>
+
+        <label>
+        </label>
+
+        <!-- Fecha del log: se envía como fromDate=dd/MM/yyyy al final de la URL -->
+        <div class="date-picker">
+            <label for="inputDate">Fecha del log</label>
+            <input type="date" id="inputDate">
+            <button class="btn" id="btnToday">Hoy (en vivo)</button>
+        </div>
+
+        <button class="btn btn-solid" id="btnApply">Aplicar</button>
+        <button class="btn" id="btnClear">Limpiar datos</button>
+
+        <p class="config-hint">
+            Sin fecha: tiempo real, se actualiza cada segundo.
+            Con fecha: se consulta una sola vez el archivo log de ese día.
+        </p>
+    </div>
+
+    <!-- ========== PESTAÑAS ========== -->
+    <nav class="tabs" id="tabs">
+        <button class="tab-button active" data-tab="dashboard">Tablero</button>
+        <button class="tab-button" data-tab="times">Tiempos de respuesta</button>
+        <button class="tab-button" data-tab="transactions">Transacciones</button>
+        <button class="tab-button" data-tab="search">Búsqueda</button>
+        <button class="tab-button" data-tab="webhook">Webhook</button>
+        <button class="tab-button" data-tab="instances">Instancias BPM</button>
+        <button class="tab-button" data-tab="webmethods">webMethods Engine</button>
+    </nav>
+
+    <main class="main">
+
+        <!-- ===== PESTAÑA 1: TABLERO ===== -->
+        <section class="tab-panel active" id="tab-dashboard">
+
+            <div class="grid kpi-grid">
+                <div class="card kpi kpi-brand">
+                    <small>Llamadas</small>
+                    <b id="kpiTotal">0</b>
+                </div>
+                <div class="card kpi kpi-sky">
+                    <small>Tiempo promedio</small>
+                    <b id="kpiAverage">0</b>
+                </div>
+                <div class="card kpi kpi-violet">
+                    <small>P95</small>
+                    <b id="kpiP95">0</b>
+                </div>
+                <div class="card kpi kpi-ok">
+                    <small>Tasa de éxito</small>
+                    <b id="kpiSuccess">0%</b>
+                </div>
+                <!-- Al hacer clic se abre el panel #errorPanel (más abajo) -->
+                <div class="card kpi kpi-bad kpi-clickable" id="kpiErrorsCard" role="button" tabindex="0"
+                    aria-expanded="false" aria-controls="errorPanel">
+                    <small>Errores</small>
+                    <b id="kpiErrors">0</b>
+                    <span class="kpi-hint">Ver registros</span>
+                </div>
+            </div>
+
+            <div class="grid grid-wide-left">
+                <div class="card">
+                    <h3>Tiempo de respuesta en vivo (ms)</h3>
+                    <div class="chart-box"><canvas id="chartLive"></canvas></div>
+                </div>
+                <div class="card">
+                    <h3>Códigos de estado</h3>
+                    <div class="chart-box"><canvas id="chartStatus"></canvas></div>
+                </div>
+            </div>
+
+            <div class="grid grid-two">
+                <div class="card">
+                    <h3>Promedio por building block (ms)</h3>
+                    <div class="chart-box"><canvas id="chartBlocks"></canvas></div>
+                </div>
+                <div class="card">
+                    <h3>Llamadas por producto</h3>
+                    <div class="chart-box"><canvas id="chartProducts"></canvas></div>
+                </div>
+            </div>
+
+            <!-- Panel de errores: oculto hasta que se pulsa el KPI "Errores" -->
+            <div class="card error-panel" id="errorPanel" hidden>
+                <div class="panel-header">
+                    <h3>
+                        Registros con error (4xx y 5xx)
+                        <span class="pill bad" id="errorPanelCount">0</span>
+                    </h3>
+                    <button class="btn" id="btnCloseErrors">Cerrar</button>
+                </div>
+                <div class="table-wrap">
+                    <table>
+                        <thead>
+                            <tr id="errorsHeader">
+                                <th data-sort="receivedAt">Hora</th>
+                                <th data-sort="buildingBlock">Building block</th>
+                                <th data-sort="operation">Operación</th>
+                                <th data-sort="method">Método</th>
+                                <th data-sort="status">Estado</th>
+                                <th data-sort="durationMs">Duración</th>
+                                <th data-sort="product">Producto</th>
+                                <th data-sort="sessionId">Sesión</th>
+                            </tr>
+                        </thead>
+                        <tbody id="errorsBody"></tbody>
+                    </table>
+                </div>
+            </div>
+        </section>
+
+        <!-- ===== PESTAÑA 2: TIEMPOS ===== -->
+        <section class="tab-panel" id="tab-times">
+            
+            <!-- ¡AQUÍ ESTÁN LAS GRÁFICAS QUE FALTABAN! -->
+            <div class="grid grid-two">
+                <div class="card">
+                    <h3>Distribución de tiempos</h3>
+                    <div class="chart-box"><canvas id="chartHistogram"></canvas></div>
+                </div>
+                <div class="card">
+                    <h3>Operaciones más lentas (P95, ms)</h3>
+                    <div class="chart-box"><canvas id="chartSlowest"></canvas></div>
+                </div>
+            </div>
+
+            <!-- AQUÍ ESTÁ LA TABLA CON LOS NUEVOS FILTROS -->
+            <div class="card">
+                <h3>Detalle por building block y operación</h3>
+                <div class="table-wrap">
+                    <table>
+                        <thead>
+                            <tr id="timesHeader">
+                                <th data-sort="block">
+                                    <div class="th-filter-header">
+                                        <span>Building block</span>
+                                        <button class="btn-filter-icon" onclick="toggleColumnFilter(event, 'dropdownTimesBlock')" title="Filtrar columna">
+                                            <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"></polygon></svg>
+                                        </button>
+                                    </div>
+                                    <div id="dropdownTimesBlock" class="th-filter-dropdown" onclick="event.stopPropagation()">
+                                        <input type="text" id="inputFilterTimesBlock" placeholder="Filtrar bloque..." autocomplete="off">
+                                    </div>
+                                </th>
+                                <th data-sort="operation">
+                                    <div class="th-filter-header">
+                                        <span>Operación</span>
+                                        <button class="btn-filter-icon" onclick="toggleColumnFilter(event, 'dropdownTimesOperacion')" title="Filtrar columna">
+                                            <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"></polygon></svg>
+                                        </button>
+                                    </div>
+                                    <div id="dropdownTimesOperacion" class="th-filter-dropdown" onclick="event.stopPropagation()">
+                                        <input type="text" id="inputFilterTimesOperacion" placeholder="Filtrar API..." autocomplete="off">
+                                    </div>
+                                </th>
+                                <th data-sort="calls">Llamadas</th>
+                                <th data-sort="average">Promedio</th>
+                                <th data-sort="p95">P95</th>
+                                <th data-sort="max">Máximo</th>
+                                <th data-sort="errors">Errores</th>
+                                <th>Carga</th>
+                            </tr>
+                        </thead>
+                        <tbody id="timesTableBody"></tbody>
+                    </table>
+                </div>
+            </div>
+        </section>
+
+        <!-- ===== PESTAÑA 3: TRANSACCIONES ===== -->
+        <section class="tab-panel" id="tab-transactions">
+
+            <div class="toolbar">
+                <input type="search" id="inputFilterText"
+                    placeholder="Filtrar por operación, bloque, producto, sesión…">
+
+                <button class="chip active" data-status="all">Todos</button>
+                <button class="chip" data-status="2">2xx</button>
+                <button class="chip" data-status="4">4xx</button>
+                <button class="chip" data-status="5">5xx</button>
+
+                <select id="selectBlock" aria-label="Building block">
+                    <option value="">Todos los bloques</option>
+                </select>
+
+                <button class="btn" id="btnExport">Exportar CSV</button>
+            </div>
+
+            <div class="card">
+                <div class="table-wrap">
+                    <table>
+                        <!-- data-sort = nombre del campo del registro por el que se ordena -->
+                        <thead>
+                            <tr id="transactionsHeader">
+                                <th data-sort="receivedAt">Hora</th>
+                               <th data-sort="buildingBlock">
+                                    <div class="th-filter-header">
+                                        <span>Building block</span>
+                                        <button class="btn-filter-icon"
+                                            onclick="toggleColumnFilter(event, 'dropdownTxBlock')"
+                                            title="Filtrar columna">
+                                            <svg viewBox="0 0 24 24" width="12" height="12" fill="none"
+                                                stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                                                stroke-linejoin="round">
+                                                <polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"></polygon>
+                                            </svg>
+                                        </button>
+                                    </div>
+                                    <div id="dropdownTxBlock" class="th-filter-dropdown"
+                                        onclick="event.stopPropagation()">
+                                        <input type="text" id="inputFilterTxBlock" placeholder="Filtrar bloque..."
+                                            autocomplete="off">
+                                    </div>
+                                </th>
+                                <th data-sort="operation">
+                                    <div class="th-filter-header">
+                                        <span>Operación</span>
+                                        <!-- Botón del embudo. Detiene el clic para no ordenar la tabla -->
+                                        <button class="btn-filter-icon"
+                                            onclick="toggleColumnFilter(event, 'dropdownOperacion')"
+                                            title="Filtrar columna">
+                                            <svg viewBox="0 0 24 24" width="12" height="12" fill="none"
+                                                stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                                                stroke-linejoin="round">
+                                                <polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"></polygon>
+                                            </svg>
+                                        </button>
+                                    </div>
+                                    <!-- Contenedor del input (oculto por defecto) -->
+                                    <div id="dropdownOperacion" class="th-filter-dropdown"
+                                        onclick="event.stopPropagation()">
+                                        <input type="text" id="inputFilterOperation" placeholder="Filtrar API..."
+                                            autocomplete="off">
+                                    </div>
+                                </th>
+                                <th data-sort="method">Método</th>
+                                <th data-sort="status">Estado</th>
+                                <th data-sort="durationMs">Duración</th>
+                                <th data-sort="product">Producto</th>
+                                <th data-sort="sessionId">Sesión</th>
+                            </tr>
+                        </thead>
+                        <tbody id="transactionsBody"></tbody>
+                    </table>
+                </div>
+
+                <!-- Botón Cargar Más -->
+                <div class="load-more-container" style="text-align: center; margin-top: 16px;">
+                    <button class="btn" id="btnLoadMoreTransactions" style="display: none;">Cargar más
+                        resultados</button>
+                </div>
+            </div>
+        </section>
+
+        <!-- ===== PESTAÑA 4: BÚSQUEDA ===== -->
+        <section class="tab-panel" id="tab-search">
+
+            <div class="search-box">
+                <input type="search" id="inputSearch"
+                    placeholder="Pega un sessionDialogIdentification o un processInstanceID">
+                <button class="btn btn-solid" id="btnSearch">Buscar</button>
+            </div>
+
+            <div id="searchResults">
+                <div class="empty">Escribe un identificador para ver sus llamadas y respuestas.</div>
+            </div>
+        </section>
+
+        <!-- ===== PESTAÑA 5: WEBHOOK ===== -->
+        <section class="tab-panel" id="tab-webhook">
+
+            <div class="search-box">
+                <input type="search" id="inputWebhookSession" placeholder="sessionDialogueIdentification">
+                <button class="btn btn-solid" id="btnWebhookSearch">Buscar</button>
+            </div>
+            <p class="tab-hint">
+                Consulta GET webHookMessage con la sesión en la URL.
+                Si hay una fecha de log elegida en Configuración, también se envía como fromDate.
+            </p>
+
+            <div id="webhookSummary"></div>
+
+            <div class="toolbar" id="webhookToolbar" hidden>
+                <button class="chip active" data-webhook-filter="all">Todos</button>
+                <button class="chip" data-webhook-filter="exit">Solo con exitCode</button>
+            </div>
+
+            <div id="webhookResults">
+                <div class="empty">Escribe un sessionDialogueIdentification para ver sus mensajes webhook.</div>
+            </div>
+        </section>
+
+        <!-- ===== PESTAÑA 7: INSTANCIAS DE PROCESO (webMethods) ===== -->
+<section class="tab-panel" id="tab-instances">
+    <!-- Barra de filtros para el API /getInstanceList -->
+    <div class="toolbar">
+        <div class="date-picker">
+            <label for="instStartDate">Inicio:</label>
+            <input type="datetime-local" id="instStartDate">
+        </div>
+        <div class="date-picker">
+            <label for="instEndDate">Fin:</label>
+            <input type="datetime-local" id="instEndDate">
+        </div>
+        <select id="instStateFilter" aria-label="Estado del proceso">
+    <option value="">Todos los estados</option>
+    <option value="Iniciadas">Iniciadas</option>
+    <option value="Concluida">Concluida</option>
+    <option value="Suspendido">Suspendido</option>
+    <option value="Resumido">Resumido</option>
+    <option value="Cancelado">Cancelado</option>
+    <option value="Detenido">Detenido</option>
+    <option value="Error">Error</option>
+</select>
+        <input type="search" id="instTextFilter" placeholder="Filtrar por nombre, ID o customId...">
+        <button class="btn btn-solid" id="btnInstSearch">Consultar</button>
+        <button class="btn" id="btnInstClear">Limpiar filtros</button>
+    </div>
+
+    <!-- KPIs de Negocio -->
+    <div class="grid kpi-grid">
+        <div class="card kpi kpi-brand">
+            <small>Total Instancias</small>
+            <b id="kpiInstTotal">0</b>
+        </div>
+        <div class="card kpi kpi-ok">
+            <small>Tasa de Conclusión</small>
+            <b id="kpiInstSuccessRate">0%</b>
+        </div>
+        <div class="card kpi kpi-sky">
+            <small>Duración Promedio (Concluidas)</small>
+            <b id="kpiInstAvgDuration">0 s</b>
+        </div>
+        <div class="card kpi kpi-warn">
+            <small>En Ejecución / Pendientes</small>
+            <b id="kpiInstActive">0</b>
+        </div>
+        <div class="card kpi kpi-bad">
+            <small>Con Error / Canceladas</small>
+            <b id="kpiInstErrors">0</b>
+        </div>
+    </div>
+
+    <!-- Gráficas de Resumen y Negocio -->
+    <div class="grid grid-wide-left">
+        <div class="card">
+            <h3>Instancias creadas por hora (Timeline)</h3>
+            <div class="chart-box"><canvas id="chartInstTimeline"></canvas></div>
+        </div>
+        <div class="card">
+            <h3>Distribución por Estado</h3>
+            <div class="chart-box"><canvas id="chartInstStatus"></canvas></div>
+        </div>
+    </div>
+
+    <div class="grid grid-two">
+        <div class="card">
+            <h3>Top Procesos con mayor volumen</h3>
+            <div class="chart-box"><canvas id="chartInstTopProcesses"></canvas></div>
+        </div>
+        <div class="card">
+            <h3>Tiempo promedio por Proceso (segundos)</h3>
+            <div class="chart-box"><canvas id="chartInstDurationByProcess"></canvas></div>
+        </div>
+    </div>
+
+    <!-- Tabla de Instancias -->
+    <div class="card">
+        <div class="panel-header">
+            <h3>Listado de Instancias</h3>
+            <span class="muted-text" id="instTableCount">0 registros</span>
+        </div>
+        <div class="table-wrap">
+            <table>
+                <thead>
+                    <tr>
+                        <th>Estado</th>
+                        <th>Última actualización</th>
+                        <th>Fecha/Hora de inicio</th>
+                        <th>Nombre de proceso</th>
+                        <th>Versión</th>
+                        <th>ID de instancia de proceso</th>
+                        <th>Duración</th>
+                        <th>Detalles</th>
+                    </tr>
+                </thead>
+                <tbody id="instancesTableBody">
+                    <tr><td colspan="8" class="empty">Haz clic en "Consultar" para cargar las instancias.</td></tr>
+                </tbody>
+            </table>
+        </div>
+
+        <!-- Paginado -->
+        <div class="pagination-bar" id="instPagination"></div>
+    </div>
+</section>
+
+        <!-- ===== PESTAÑA 6: webMethods (diagrama BPM) ===== -->
+        <section class="tab-panel" id="tab-webmethods">
+
+            <div class="search-box">
+                <input type="search" id="inputBpmQuery"
+                    placeholder="processInstanceId, customProcessInstanceId o sessionDialogueIdentification">
+                <button class="btn btn-solid" id="btnBpmSearch">Buscar</button>
+            </div>
+            <p class="tab-hint">
+                Dibuja los pasos de findStepProcesess. El proceso padre (customProcessInstanceId) va arriba
+                y los hijos (processInstanceId) debajo. Arrastra el diagrama con el mouse para moverte; usa la rueda del
+                ratón para hacer zoom; pulsa cualquier objeto para ver su información.
+            </p>
+
+            <div id="bpmSummary"></div>
+
+            <div class="card bpm-card" id="bpmCardContainer">
+
+                <!-- Controles de Zoom y Pantalla Completa -->
+                <div class="bpm-controls"
+                    style="display: flex; gap: 8px; padding: 10px 20px; border-bottom: 1px solid var(--line); justify-content: flex-end; background: #fafafa;">
+                    <!-- Agrega este botón junto a los de zoom y pantalla completa -->
+                    <button id="btnBpmReload" class="btn" title="Recargar diagrama con nuevos datos">↻ Recargar</button>
+                    <button class="btn" id="btnBpmZoomOut" title="Alejar">-</button>
+                    <span id="bpmZoomLevel"
+                        style="line-height: 34px; font-size: 13px; font-weight: 600; min-width: 45px; text-align: center;">100%</span>
+                    <button class="btn" id="btnBpmZoomIn" title="Acercar">+</button>
+                    <button class="btn" id="btnBpmResetZoom" title="Restablecer">1:1</button>
+                    <div style="width: 10px;"></div>
+                    <button class="btn btn-solid" id="btnBpmFullscreen" title="Pantalla Completa">⛶ Pantalla
+                        Completa</button>
+                </div>
+
+                <!-- Leyenda de objetos BPM (prefijo del nombre del paso) -->
+                <div class="bpm-legend">
+                    <span class="legend-item"><i class="lg lg-start"></i> EVI · Evento inicial</span>
+                    <span class="legend-item"><i class="lg lg-service">TS</i> Tarea de servicio (API)</span>
+                    <span class="legend-item"><i class="lg lg-user">TU</i> Tarea humana</span>
+                    <span class="legend-item"><i class="lg lg-gate"></i> CO · Compuerta</span>
+                    <span class="legend-item"><i class="lg lg-simulated"></i> Paso simulado (Saltado)</span>
+                    <span class="legend-item"><i class="lg lg-subprocess"></i> SP · Subproceso</span>
+                    <span class="legend-item"><i class="lg lg-end"></i> EVF · Evento final</span>
+                    <span class="legend-item"><i class="lg lg-error">✕</i> Paso con error</span>
+                    <span class="legend-item hand-hint">✋ Arrastra / Ctrl+Scroll Zoom</span>
+                </div>
+
+                <div class="bpm-scroll" id="bpmDiagram">
+                    <div class="empty">Escribe un processInstanceId, customProcessInstanceId o
+                        sessionDialogueIdentification para dibujar el proceso.</div>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <!-- Panel lateral con el detalle de una transacción -->
+    <aside class="drawer" id="drawer" aria-label="Detalle">
+        <div class="drawer-resizer"></div>
+    </aside>
+
+    <!-- Cuadro de diálogo: detalle de la pantalla (channelScreen) -->
+    <dialog class="screen-dialog" id="screenDialog" aria-labelledby="screenDialogTitle">
+        <div class="dialog-inner">
+            <div class="panel-header">
+                <h3 id="screenDialogTitle">Detalle de la pantalla</h3>
+                <button class="btn" id="btnCloseDialog">Cerrar</button>
+            </div>
+            <div id="screenDialogBody"></div>
+        </div>
+    </dialog>
+
+    <script src="js/app.js"></script>
+    <script src="js/bpm.js"></script>
+    <script src="js/instances.js"></script>
+    <script src="js/utils.js"></script>
+
+    <script>
+        const CLAVE_STORAGE = 'aviso_log_6pm_visto';
+
+    // Al cargar la página, revisa si ya fue cerrado antes
+    document.addEventListener('DOMContentLoaded', () => {
+      if (!localStorage.getItem(CLAVE_STORAGE)) {
+        document.getElementById('avisoLiquidGlass').style.display = 'flex';
+      }
+    });
+
+    // Cierra y guarda en el navegador para no volver a mostrarlo
+    function cerrarPermanente() {
+      document.getElementById('avisoLiquidGlass').style.display = 'none';
+      localStorage.setItem(CLAVE_STORAGE, 'true');
+    }
+    </script>
+</body>
+
+</html>

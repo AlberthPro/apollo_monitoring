@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Document</title>
+</head>
+
+<body>
+
+    <form id="loginForm">
+        <input type="text" id="username" placeholder="Usuario IS" required />
+        <input type="password" id="password" placeholder="Contraseña" required />
+        <button type="submit">Ingresar</button>
+        <p id="errorMsg" style="color:red;"></p>
+    </form>
+
+    <script>
+        document.getElementById("loginForm").addEventListener("submit", async (e) => {
+            e.preventDefault();
+            const user = document.getElementById("username").value;
+            const pass = document.getElementById("password").value;
+            const basicToken = btoa(`${user}:${pass}`);
+
+            try {
+                const response = await fetch("/rest/auth/login", {
+                    method: "POST",
+                    headers: {
+                        "Authorization": `Basic ${basicToken}`,
+                        "Accept": "application/json",
+                        "X-Requested-With": "XMLHttpRequest"
+                    },
+                    credentials: "include" // Permite que el navegador guarde la cookie ssnid de IS
+                });
+
+                if (response.ok) {
+                    const data = await response.json();
+                    // Guardamos el token de sesión en sessionStorage para usarlo entre páginas
+                    sessionStorage.setItem("wm_session_token", data.sessionId);
+                    sessionStorage.setItem("wm_username", data.username);
+                    window.location.href = "dashboard.html";
+                } else {
+                    document.getElementById("errorMsg").textContent = "Usuario o contraseña incorrectos.";
+                }
+            } catch (err) {
+                document.getElementById("errorMsg").textContent = "Error de conexión con Integration Server.";
+            }
+        });
+    </script>
+</body>
+
+</html>

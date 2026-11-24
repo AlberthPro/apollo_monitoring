@@ -1,0 +1,110 @@
+.copyJson {
+  font-size: 10px;
+}
+
+
+/* ==========================================================
+   19. MODAL AVISO LIQUID GLASS
+   ========================================================== */
+.overlay-glass {
+    position: fixed;
+    inset: 0;
+    z-index: 9999;
+    display: grid;
+    place-items: center;
+    padding: 20px;
+    background: rgba(24, 27, 32, 0.28);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+    animation: fadeInGlass 0.25s ease-out forwards;
+}
+
+.card-liquid-glass {
+    position: relative;
+    width: min(400px, 100%);
+    padding: 26px 28px;
+    border-radius: 18px;
+    /* Efecto cristal líquido translúcido con reflejo especular superior */
+    background: linear-gradient(
+        135deg,
+        rgba(255, 255, 255, 0.85) 0%,
+        rgba(255, 255, 255, 0.55) 100%
+    );
+    backdrop-filter: blur(22px) saturate(180%);
+    -webkit-backdrop-filter: blur(22px) saturate(180%);
+    border: 1px solid rgba(255, 255, 255, 0.8);
+    box-shadow:
+        0 20px 40px rgba(24, 27, 32, 0.14),
+        inset 0 1px 1px rgba(255, 255, 255, 0.9),
+        inset 0 -1px 2px rgba(99, 71, 209, 0.08);
+    color: var(--ink);
+    animation: scaleUpGlass 0.28s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.card-liquid-glass h3 {
+    margin: 0 0 8px;
+    padding-right: 28px;
+    font-size: 16px;
+    font-weight: 700;
+    letter-spacing: -0.2px;
+    color: var(--ink);
+}
+
+.card-liquid-glass p {
+    margin: 0;
+    font-size: 13.5px;
+    line-height: 1.55;
+    color: var(--muted);
+}
+
+.card-liquid-glass strong {
+    color: var(--brand);
+    font-weight: 600;
+    background: var(--brand-soft);
+    padding: 2px 7px;
+    border-radius: 5px;
+}
+
+.btn-close-icon {
+    position: absolute;
+    top: 16px;
+    right: 16px;
+    display: grid;
+    place-items: center;
+    width: 30px;
+    height: 30px;
+    border: 1px solid rgba(255, 255, 255, 0.65);
+    border-radius: 50%;
+    background: rgba(255, 255, 255, 0.45);
+    color: var(--muted);
+    cursor: pointer;
+    transition: all 0.15s ease;
+}
+
+.btn-close-icon:hover {
+    background: rgba(255, 255, 255, 0.9);
+    color: var(--ink);
+    transform: scale(1.06);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+}
+
+.btn-close-icon:focus-visible {
+    outline: 2px solid var(--brand);
+    outline-offset: 2px;
+}
+
+@keyframes fadeInGlass {
+    from { opacity: 0; }
+    to   { opacity: 1; }
+}
+
+@keyframes scaleUpGlass {
+    from {
+        opacity: 0;
+        transform: scale(0.94) translateY(8px);
+    }
+    to {
+        opacity: 1;
+        transform: scale(1) translateY(0);
+    }
+}
