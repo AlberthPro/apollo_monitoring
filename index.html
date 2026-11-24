@@ -201,33 +201,13 @@
                     <table>
                         <thead>
                             <tr id="timesHeader">
-                                <th data-sort="block">
-                                    <div class="th-filter-header">
-                                        <span>Building block</span>
-                                        <button class="btn-filter-icon" onclick="toggleColumnFilter(event, 'dropdownTimesBlock')" title="Filtrar columna">
-                                            <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"></polygon></svg>
-                                        </button>
-                                    </div>
-                                    <div id="dropdownTimesBlock" class="th-filter-dropdown" onclick="event.stopPropagation()">
-                                        <input type="text" id="inputFilterTimesBlock" placeholder="Filtrar bloque..." autocomplete="off">
-                                    </div>
-                                </th>
-                                <th data-sort="operation">
-                                    <div class="th-filter-header">
-                                        <span>Operación</span>
-                                        <button class="btn-filter-icon" onclick="toggleColumnFilter(event, 'dropdownTimesOperacion')" title="Filtrar columna">
-                                            <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"></polygon></svg>
-                                        </button>
-                                    </div>
-                                    <div id="dropdownTimesOperacion" class="th-filter-dropdown" onclick="event.stopPropagation()">
-                                        <input type="text" id="inputFilterTimesOperacion" placeholder="Filtrar API..." autocomplete="off">
-                                    </div>
-                                </th>
+                                <th data-sort="block" data-filter="block">Building block</th>
+                                <th data-sort="operation" data-filter="operation">Operación</th>
                                 <th data-sort="calls">Llamadas</th>
                                 <th data-sort="average">Promedio</th>
                                 <th data-sort="p95">P95</th>
                                 <th data-sort="max">Máximo</th>
-                                <th data-sort="errors">Errores</th>
+                                <th data-sort="errors" data-filter="errors">Errores</th>
                                 <th>Carga</th>
                             </tr>
                         </thead>
@@ -263,50 +243,12 @@
                         <thead>
                             <tr id="transactionsHeader">
                                 <th data-sort="receivedAt">Hora</th>
-                               <th data-sort="buildingBlock">
-                                    <div class="th-filter-header">
-                                        <span>Building block</span>
-                                        <button class="btn-filter-icon"
-                                            onclick="toggleColumnFilter(event, 'dropdownTxBlock')"
-                                            title="Filtrar columna">
-                                            <svg viewBox="0 0 24 24" width="12" height="12" fill="none"
-                                                stroke="currentColor" stroke-width="2" stroke-linecap="round"
-                                                stroke-linejoin="round">
-                                                <polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"></polygon>
-                                            </svg>
-                                        </button>
-                                    </div>
-                                    <div id="dropdownTxBlock" class="th-filter-dropdown"
-                                        onclick="event.stopPropagation()">
-                                        <input type="text" id="inputFilterTxBlock" placeholder="Filtrar bloque..."
-                                            autocomplete="off">
-                                    </div>
-                                </th>
-                                <th data-sort="operation">
-                                    <div class="th-filter-header">
-                                        <span>Operación</span>
-                                        <!-- Botón del embudo. Detiene el clic para no ordenar la tabla -->
-                                        <button class="btn-filter-icon"
-                                            onclick="toggleColumnFilter(event, 'dropdownOperacion')"
-                                            title="Filtrar columna">
-                                            <svg viewBox="0 0 24 24" width="12" height="12" fill="none"
-                                                stroke="currentColor" stroke-width="2" stroke-linecap="round"
-                                                stroke-linejoin="round">
-                                                <polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"></polygon>
-                                            </svg>
-                                        </button>
-                                    </div>
-                                    <!-- Contenedor del input (oculto por defecto) -->
-                                    <div id="dropdownOperacion" class="th-filter-dropdown"
-                                        onclick="event.stopPropagation()">
-                                        <input type="text" id="inputFilterOperation" placeholder="Filtrar API..."
-                                            autocomplete="off">
-                                    </div>
-                                </th>
-                                <th data-sort="method">Método</th>
-                                <th data-sort="status">Estado</th>
+                                <th data-sort="buildingBlock" data-filter="buildingBlock">Building block</th>
+                                <th data-sort="operation" data-filter="operation">Operación</th>
+                                <th data-sort="method" data-filter="method">Método</th>
+                                <th data-sort="status" data-filter="status">Estado</th>
                                 <th data-sort="durationMs">Duración</th>
-                                <th data-sort="product">Producto</th>
+                                <th data-sort="product" data-filter="product">Producto</th>
                                 <th data-sort="sessionId">Sesión</th>
                             </tr>
                         </thead>
@@ -429,7 +371,7 @@
             <div class="chart-box"><canvas id="chartInstTopProcesses"></canvas></div>
         </div>
         <div class="card">
-            <h3>Tiempo promedio por Proceso (segundos)</h3>
+            <h3>Evolución de Instancias por Proceso (segundos)</h3>
             <div class="chart-box"><canvas id="chartInstDurationByProcess"></canvas></div>
         </div>
     </div>
@@ -443,14 +385,14 @@
         <div class="table-wrap">
             <table>
                 <thead>
-                    <tr>
-                        <th>Estado</th>
-                        <th>Última actualización</th>
-                        <th>Fecha/Hora de inicio</th>
-                        <th>Nombre de proceso</th>
-                        <th>Versión</th>
-                        <th>ID de instancia de proceso</th>
-                        <th>Duración</th>
+                    <tr id="instancesHeader">
+                        <th data-sort="statusText" data-filter="statusText">Estado</th>
+                        <th data-sort="lastUpdate">Última actualización</th>
+                        <th data-sort="startTime">Fecha/Hora de inicio</th>
+                        <th data-sort="processName" data-filter="processName">Nombre de proceso</th>
+                        <th data-sort="version" data-filter="version">Versión</th>
+                        <th data-sort="instanceId">ID de instancia de proceso</th>
+                        <th data-sort="durationState" data-filter="durationState">Duración</th>
                         <th>Detalles</th>
                     </tr>
                 </thead>
@@ -535,6 +477,7 @@
         </div>
     </dialog>
 
+    <script src="js/table-filter.js"></script>
     <script src="js/app.js"></script>
     <script src="js/bpm.js"></script>
     <script src="js/instances.js"></script>
