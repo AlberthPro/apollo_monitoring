@@ -43,8 +43,8 @@ const CONFIG = {
     },
 
     logRequests: false,       // true = imprime en la consola la URL de cada petición
-    refreshMs: 5000,          // cada cuánto se consulta el API
-    requestTimeoutMs: 5000,   // tiempo máximo de espera por consulta
+    refreshMs: 3000,          // cada cuánto se consulta el API
+    requestTimeoutMs: 15000,   // tiempo máximo de espera por consulta
     maxRecords: 3000,         // registros guardados en memoria (contador máximo)
     maxTableRows: 200,        // filas visibles iniciales en la tabla de transacciones
     liveChartPoints: 90,      // puntos de la gráfica en vivo
@@ -52,6 +52,7 @@ const CONFIG = {
     topSlowest: 7,            // barras en "operaciones más lentas"
     responsesPerCycle: 2,     // sesiones cuyas respuestas se piden por ciclo
     tooltipTopApis: 5,        // APIs listadas en el tooltip de las gráficas
+    responseConcurrency: 3,   // Máximo de peticiones simultáneas a searchResponses (no satura el server)
 
     // Modo histórico (cuando se elige una fecha de log en Configuración)
     historyResponsesPerCycle: 10,  // sesiones cuyas respuestas se piden por ciclo
@@ -83,8 +84,10 @@ COLORS.warn, COLORS.pink, COLORS.teal, COLORS.bad];
 /* ==========================================================
    2. ESTADO
    ========================================================== */
+let arrivalCounter = 0;
 const state = {
     records: new Map(),       // llamadas de negocio: id -> registro
+    newRecordIds: new Set(),
     responsesBySession: new Map(), // sessionId -> lista de respuestas
     sessionQueue: new Set(),  // sesiones pendientes de pedir respuestas
     env: CONFIG.defaultEnvironment,   // DEV | QA | PROD
@@ -131,16 +134,18 @@ function formatDuration(ms) {
     return ms >= 1000 ? (ms / 1000).toFixed(2) + " s" : Math.round(ms) + " ms";
 }
 
+const MEXICO_TIME_FORMATTER = new Intl.DateTimeFormat(CONFIG.locale, {
+    timeZone: "America/Mexico_City",
+    hour12: false,
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit"
+});
+
 /** Formatea milisegundos siempre en hora Centro de México (America/Mexico_City). */
 function formatTime(timestamp) {
     if (!timestamp) return "—";
-    return new Date(timestamp).toLocaleTimeString(CONFIG.locale, {
-        timeZone: "America/Mexico_City",
-        hour12: false,
-        hour: "2-digit",
-        minute: "2-digit",
-        second: "2-digit"
-    });
+    return MEXICO_TIME_FORMATTER.format(timestamp);
 }
 
 /**
@@ -158,7 +163,7 @@ function parseVirginiaTimestampToMs(value) {
     if (match) {
         const [, day, month, year, hour, minute, second, ms = "0"] = match;
         const milli = Number(ms.padEnd(3, "0").slice(0, 3));
-        
+
         // Construimos la fecha con offset fijo de Centro de México (-06:00) para conservar exactamente la hora (ej. 18:49:21)
         const isoMexico = `${year}-${month}-${day}T${hour}:${minute}:${second}.${String(milli).padStart(3, "0")}-06:00`;
         return Date.parse(isoMexico);
@@ -317,7 +322,7 @@ function normalizeBusinessItem(item) {
 
 /** Un elemento de resultDocuments[] -> respuesta con el JSON ya formateado. */
 function normalizeResponseDocument(doc) {
-   const raw = {};
+    const raw = {};
     for (const key in doc) raw[key] = cleanValue(doc[key]);
 
     let bodyText = String(raw.response ?? "");
@@ -384,7 +389,7 @@ async function fetchJson(url, { auth = false } = {}) {
  * Si no hay fecha elegida (tiempo real) la URL no cambia.
  */
 function withFromDate(url) {
-   const todayApiDate = isoToApiDate(toIsoDate(new Date()));
+    const todayApiDate = isoToApiDate(toIsoDate(new Date()));
     if (!state.historyDate || state.historyDate === todayApiDate) return url;
 
     const separator = url.includes("?") ? "&" : "?";
@@ -393,17 +398,21 @@ function withFromDate(url) {
 
 /** Lista de llamadas de negocio (viene en el objeto "Items"). */
 async function getBusinessItems() {
-    const data = state.demoMode
-        ? { Items: buildDemoItems(state.historyDate ? 60 : 0) }
-        : await fetchJson(withFromDate(state.baseUrl + CONFIG.endpoints.business + "&lastOffset=" + logPollState.lastOffset), { auth: CONFIG.auth.business });
-
-    // Actualiza el offset (soporta nextOffset o newText según el nombre exacto de la llave en tu API)
-    const nextOffset = data.nextOffset !== undefined ? data.nextOffset : data.newText;
-    if (nextOffset != null) {
-        logPollState.lastOffset = nextOffset;
+    if (state.demoMode) {
+        return buildDemoItems(state.historyDate ? 60 : 0);
     }
 
-    return data.Items || data.items || data.results || [];
+    const offsetParam = logPollState.lastOffset ? `&lastOffset=${encodeURIComponent(logPollState.lastOffset)}` : "&lastOffset=0";
+    const url = withFromDate(state.baseUrl + CONFIG.endpoints.business + offsetParam);
+    const data = await fetchJson(url, { auth: CONFIG.auth.business });
+
+    // Solo actualiza lastOffset si el API devolvió un valor válido y no vacío
+    const nextOffset = data?.nextOffset !== undefined ? data.nextOffset : data?.newText;
+    if (nextOffset !== null && nextOffset !== undefined && String(nextOffset).trim() !== "") {
+        logPollState.lastOffset = String(nextOffset).trim();
+    }
+
+    return data?.Items || data?.items || data?.results || [];
 }
 
 function buildResponsesUrl(sessionId) {
@@ -489,56 +498,129 @@ function buildDemoResponses(sessionId) {
    6. CONSULTA EN TIEMPO REAL
    ========================================================== */
 
-function addRecords(items) {
-    if (!Array.isArray(items)) return 0;
+// En Sección 6. CONSULTA EN TIEMPO REAL
+let activeResponseWorkers = 0;
 
-    let added = 0;
+/**
+ * Procesa la cola de sesiones con un máximo de `CONFIG.responseConcurrency`
+ * peticiones en paralelo, sin esperar ciclos fijos de 3 segundos.
+ */
+function pumpResponseQueue() {
+    if (state.paused) return;
+
+    while (activeResponseWorkers < CONFIG.responseConcurrency && state.sessionQueue.size > 0) {
+        // Toma la primera sesión pendiente
+        const sessionId = state.sessionQueue.values().next().value;
+        state.sessionQueue.delete(sessionId);
+
+        // Si ya se cargó (por ejemplo, al abrir el detalle), pasa a la siguiente
+        if (state.responsesBySession.has(sessionId)) continue;
+
+        activeResponseWorkers++;
+        loadResponses(sessionId)
+            .then(() => {
+                // Actualiza KPIs si estamos en Tablero, o repinta solo si hay fila visible sin timestamp
+                if (state.activeTab === "dashboard") {
+                    renderActiveTab();
+                } else if (state.activeTab === "transactions") {
+                    updateVisibleRowsTimestamps(sessionId);
+                }
+            })
+            .catch(() => {
+                state.responsesBySession.set(sessionId, []);
+            })
+            .finally(() => {
+                activeResponseWorkers--;
+                pumpResponseQueue(); // Toma la siguiente sesión al instante
+            });
+    }
+}
+
+/**
+ * Actualiza únicamente la celda de Hora (td:first-child) en el DOM para las filas
+ * de esa sesión sin reconstruir toda la tabla ni interrumpir animaciones.
+ */
+function updateVisibleRowsTimestamps(sessionId) {
+    for (const r of state.records.values()) {
+        if (r.sessionId !== sessionId) continue;
+        const ts = getRecordEffectiveTimestamp(r);
+        if (ts && r._cachedTs !== ts) {
+            r._cachedTs = ts;
+            r._cachedTime = formatTime(ts);
+            const row = document.querySelector(`#transactionsBody tr[data-id="${CSS.escape(r.id)}"]`);
+            if (row && row.firstElementChild) {
+                row.firstElementChild.textContent = r._cachedTime;
+            }
+        }
+    }
+}
+
+function addRecords(items) {
+    if (!Array.isArray(items) || items.length === 0) return 0;
+
+    const newEntries = [];
+    const isIncremental = state.records.size > 0 && items.length <= 50;
+
     items.forEach((item, index) => {
-        // 1. Ignorar elementos nulos, indefinidos, textos vacíos u objetos sin propiedades
         if (!item || (typeof item === "object" && Object.keys(item).length === 0) || (typeof item === "string" && item.trim() === "")) {
             return;
         }
 
-        // 2. Validar y parsear si la nueva línea llega como texto
         let parsedItem = item;
         if (typeof item === "string") {
             try {
                 parsedItem = JSON.parse(item.trim());
             } catch (error) {
-                return; // Se descarta la línea si no es un JSON válido
+                return;
             }
         }
 
-        // 3. Descartar si el resultado no es un objeto válido
         if (!parsedItem || typeof parsedItem !== "object" || Array.isArray(parsedItem)) return;
+        if (parsedItem.id === "id" || parsedItem.id === "ID" || parsedItem.operation === "operation") return;
 
-        // 4. Filtrar el arreglo con los nombres de columnas (si llegan a enviarse)
-        if (parsedItem.id === "id" || parsedItem.id === "ID" || parsedItem.operation === "operation") {
+        const record = normalizeBusinessItem(parsedItem);
+        if (!record.id && !record.processInstanceId) {
+            console.warn("[ADD] Descartado por falta de id:", parsedItem);
             return;
         }
 
-        const record = normalizeBusinessItem(parsedItem);
+        if (!record.id) record.id = `${record.processInstanceId}-${record.receivedAt}-${index}`;
+        if (state.records.has(record.id)) {
+            return;
+        }
 
-        // 5. Validar que tenga identificadores mínimos
-        if (!record.id && !record.processInstanceId) return;
+        record.arrivalSeq = ++arrivalCounter;
+        newEntries.push([record.id, record]);
 
-        const key = record.id || record.processInstanceId + "-" + record.receivedAt + "-" + index;
-        if (state.records.has(key)) return;        // Ya existe en memoria
-
-        state.records.set(key, record);
-        added++;
+        // Marca el ID para animar solo si ya había datos cargados
+        if (isIncremental && state.activeTab === "transactions") {
+            state.newRecordIds.add(record.id);
+        }
 
         if (record.sessionId && !state.responsesBySession.has(record.sessionId)) {
             state.sessionQueue.add(record.sessionId);
         }
     });
 
-    // Control de memoria: borra los más antiguos si se excede el límite
+    if (newEntries.length === 0) return 0;
+
+    // Pone los más nuevos al inicio del Map
+    state.records = new Map([...newEntries.reverse(), ...state.records]);
+
+    // Mantiene el límite de memoria eliminando los más antiguos al final
     const limit = state.historyDate ? CONFIG.maxHistoricalRecords : CONFIG.maxRecords;
-    while (state.records.size > limit) {
-        state.records.delete(state.records.keys().next().value);
+    if (state.records.size > limit) {
+        const keys = [...state.records.keys()];
+        for (let i = limit; i < keys.length; i++) {
+            state.records.delete(keys[i]);
+        }
     }
-    return added;
+
+    // Refresca la pestaña activa inmediatamente
+    renderActiveTab();
+    pumpResponseQueue();
+
+    return newEntries.length;
 }
 
 /**
@@ -546,6 +628,8 @@ function addRecords(items) {
  *  - Tiempo real: consulta, espera lo que falte para completar refreshMs y repite.
  *  - Histórico (hay fecha elegida): consulta UNA sola vez; esos datos ya no cambian.
  */
+let isFetchingBusiness = false;
+
 async function pollBusinessApi() {
     const generation = state.generation;
     const startedAt = performance.now();
@@ -553,8 +637,13 @@ async function pollBusinessApi() {
     if (!state.paused) {
         try {
             const items = await getBusinessItems();
-            if (generation !== state.generation) return;   // se cambió la configuración
-            if (addRecords(items) > 0) state.needsRender = true;
+
+            if (generation !== state.generation) {
+                console.warn("[POLL] Abortado por cambio de generation:", generation, state.generation);
+                return;
+            }
+
+            const agregados = addRecords(items);
 
             if (state.historyDate) {
                 setStatus("history", `Histórico ${state.historyDate} · ${state.records.size} registros`);
@@ -563,16 +652,18 @@ async function pollBusinessApi() {
                 setStatus("ok", `${where} · ${state.records.size} registros`);
             }
         } catch (error) {
+            console.error("[POLL] Error en consulta:", error);
             if (generation !== state.generation) return;
             const reason = error.name === "AbortError" ? "tiempo agotado" : error.message;
             setStatus("err", "Sin conexión: " + reason);
         }
     }
 
-    if (state.historyDate) return;   // histórico: no se programa otra consulta
+    if (state.historyDate) return;
 
+    clearTimeout(state.pollTimer);
     const elapsed = performance.now() - startedAt;
-    state.pollTimer = setTimeout(pollBusinessApi, Math.max(0, CONFIG.refreshMs - elapsed));
+    state.pollTimer = setTimeout(pollBusinessApi, Math.max(500, CONFIG.refreshMs - elapsed));
 }
 
 /** Pide en segundo plano las respuestas de las sesiones nuevas. */
@@ -583,7 +674,12 @@ function fetchQueuedResponses() {
         for (const sessionId of sessions) {
             state.sessionQueue.delete(sessionId);
             loadResponses(sessionId)
-                .then(() => { state.needsRender = true; })
+                .then(() => {
+                    // Solo refresca si estamos en el Tablero (para actualizar el KPI de llamadas correlacionadas)
+                    if (state.activeTab === "dashboard") {
+                        renderActiveTab();
+                    }
+                })
                 .catch(() => state.responsesBySession.set(sessionId, []));
         }
     }
@@ -986,10 +1082,17 @@ function getRecordEffectiveTimestamp(record) {
 function sortRecords(records, field, direction) {
     const factor = direction === "asc" ? 1 : -1;
     return [...records].sort((a, b) => {
-        // Si se ordena por la columna de hora/timestamp, usamos el timestamp correlacionado (id <-> uuid)
-        const left = field === "receivedAt" ? getRecordEffectiveTimestamp(a) : (a[field] ?? "");
-        const right = field === "receivedAt" ? getRecordEffectiveTimestamp(b) : (b[field] ?? "");
+        if (field === "receivedAt") {
+            const diff = getRecordEffectiveTimestamp(a) - getRecordEffectiveTimestamp(b);
+            // Si ocurrieron en el mismo segundo o uno aún no tiene startTime, desempata por orden de llegada del log
+            if (Math.abs(diff) < 1000) {
+                return ((a.arrivalSeq || 0) - (b.arrivalSeq || 0)) * factor;
+            }
+            return diff * factor;
+        }
 
+        const left = a[field] ?? "";
+        const right = b[field] ?? "";
         if (typeof left === "number" && typeof right === "number") return (left - right) * factor;
         return String(left).localeCompare(String(right), CONFIG.locale) * factor;
     });
@@ -1014,9 +1117,19 @@ function updateSortIndicators(headerSelector, sort) {
 
 /** Filas <tr> con el mismo formato para la pestaña Transacciones y el panel de errores. */
 function buildTransactionRows(rows) {
-    return rows.map((r) => `
-        <tr class="clickable" data-id="${escapeHtml(r.id)}">
-            <td>${formatTime(getRecordEffectiveTimestamp(r))}</td>
+    return rows.map((r) => {
+        const isNew = state.newRecordIds.has(r.id);
+        
+        // Si aún no tiene hora formateada o ya se actualizó su apiTimestamp, la calcula y cachea
+        const ts = getRecordEffectiveTimestamp(r);
+        if (!r._cachedTime || r._cachedTs !== ts) {
+            r._cachedTs = ts;
+            r._cachedTime = formatTime(ts);
+        }
+
+        return `
+        <tr class="clickable ${isNew ? "row-new" : ""}" data-id="${escapeHtml(r.id)}">
+            <td>${r._cachedTime}</td>
             <td><b>${escapeHtml(r.buildingBlock)}</b></td>
             <td title="${escapeHtml(r.operation)}">${escapeHtml(apiName(r))}</td>
             <td>${escapeHtml(r.method)}</td>
@@ -1024,17 +1137,16 @@ function buildTransactionRows(rows) {
             <td>${formatDuration(r.durationMs)}</td>
             <td>${escapeHtml(r.product)}</td>
             <td>${escapeHtml(r.sessionId)}</td>
-        </tr>`).join("") || '<tr><td colspan="8" class="empty">Sin resultados.</td></tr>';
+        </tr>`;
+    }).join("") || '<tr><td colspan="8" class="empty">Sin resultados.</td></tr>';
 }
-
 // filter operation in tab transacciones
 
 function getVisibleTransactions() {
     const text = $("#inputFilterText").value.trim().toLowerCase();
     const blockSelect = $("#selectBlock").value;
 
-    // 1. Filtros globales de la barra superior (chips 2xx/4xx/5xx, select y buscador)
-    const preFiltered = [...state.records.values()].filter((record) => {
+    const filtered = [...state.records.values()].filter((record) => {
         const statusMatches = state.statusFilter === "all" || String(record.status).charAt(0) === state.statusFilter;
         const blockSelectMatches = !blockSelect || record.buildingBlock === blockSelect;
         const textMatches = !text || [
@@ -1045,10 +1157,10 @@ function getVisibleTransactions() {
         return statusMatches && blockSelectMatches && textMatches;
     });
 
-    // 2. Filtros de checkboxes por columna + Ordenamiento homologado
-    return TableEngine.process("transactionsHeader", preFiltered, {
-        operation: (r) => apiName(r),               // Muestra el nombre limpio en los checkboxes
-        receivedAt_sort: (r) => getRecordEffectiveTimestamp(r) // Ordena la hora por timestamp real
+    return TableEngine.process("transactionsHeader", filtered, {
+        operation: (r) => apiName(r),
+        // Ordena por secuencia de llegada del streamLogger (más nuevo = mayor arrivalSeq = fila #1 en desc)
+        receivedAt_sort: (r) => r.arrivalSeq || 0
     });
 }
 
@@ -1056,14 +1168,15 @@ function getVisibleTransactions() {
 
 function renderTransactions() {
     fillBlockSelect();
-    updateSortIndicators("#transactionsHeader", state.sort);
 
     const visibleRecords = getVisibleTransactions();
     const recordsToShow = visibleRecords.slice(0, state.currentTransactionsLimit);
 
     $("#transactionsBody").innerHTML = buildTransactionRows(recordsToShow);
 
-    // Logica de paginación (botón "Cargar Más")
+    // Limpia los IDs ya animados para que no vuelvan a parpadear al filtrar u ordenar
+    state.newRecordIds.clear();
+
     const btnLoadMore = $("#btnLoadMoreTransactions");
     if (visibleRecords.length > state.currentTransactionsLimit) {
         btnLoadMore.style.display = "inline-block";
@@ -1923,11 +2036,12 @@ function togglePause() {
     state.paused = !state.paused;
     $("#btnPause").textContent = state.paused ? "Reanudar" : "Pausar";
     if (state.paused) setStatus("err", "En pausa");
+    else pumpResponseQueue();
 }
 
 /** Guarda la configuración, vacía los datos y reinicia la consulta. */
 function applyConfig() {
-  setEnvironment($(".env-btn.active")?.dataset.env);
+    setEnvironment($(".env-btn.active")?.dataset.env);
     state.demoMode = false;
 
     const selectedDate = $("#inputDate").value;
@@ -1970,12 +2084,16 @@ function backToLive() {
 
 function clearData() {
     state.records.clear();
+    state.newRecordIds.clear(); // Garantiza que la siguiente carga inicial no anime
     state.responsesBySession.clear();
     state.sessionQueue.clear();
     state.webhook = newWebhookState();
     webhookRequestId++;
+    arrivalCounter = 0;
+    logPollState.lastOffset = 0;
     state.needsRender = true;
     state.currentTransactionsLimit = CONFIG.maxTableRows;
+    renderActiveTab();
 }
 
 function setStatusFilter(button) {
@@ -2029,6 +2147,17 @@ function bindEvents() {
             toggleErrorsPanel();
         }
     });
+
+    // Dentro de bindEvents()
+    document.addEventListener("visibilitychange", () => {
+    // Si el usuario vuelve a la pestaña y no está en pausa ni en modo histórico,
+    // dispara una consulta inmediata sin esperar al timer dormido
+    if (!document.hidden && !state.paused && !state.historyDate) {
+        clearTimeout(state.pollTimer);
+        pollBusinessApi();
+    }
+});
+
     $("#btnCloseErrors").addEventListener("click", () => toggleErrorsPanel(false));
     $("#errorsHeader").addEventListener("click", (event) => {
         const th = event.target.closest("th[data-sort]");
@@ -2041,9 +2170,9 @@ function bindEvents() {
 
     // Transacciones
     $$(".chip[data-status]").forEach((chip) => chip.addEventListener("click", () => setStatusFilter(chip)));
-   
+
     // Filtros de columna tipo Excel (Transacciones y Tiempos)
-   const filterInputIds = [
+    const filterInputIds = [
         "#inputFilterText",
     ];
 
@@ -2077,7 +2206,7 @@ function bindEvents() {
     $("#btnExport").addEventListener("click", exportTransactionsCsv);
     $("#btnLoadMoreTransactions").addEventListener("click", loadMoreTransactions);
 
-    
+
     $("#transactionsBody").addEventListener("click", (event) => {
         const row = event.target.closest("tr[data-id]");
         if (row) openDetail(row.dataset.id);
@@ -2261,7 +2390,6 @@ function init() {
 
     bindEvents();
     pollBusinessApi();
-    fetchQueuedResponses();
     setInterval(() => { if (state.needsRender) renderActiveTab(); }, CONFIG.refreshMs);
 }
 

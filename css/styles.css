@@ -1761,3 +1761,29 @@ input[type="datetime-local"]:hover {
     gap: 6px;
     font-weight: 500;
 }
+
+
+@keyframes newRowHighlight {
+    0% {
+        opacity: 0;
+        transform: translateY(-8px);
+        background-color: rgba(79, 107, 237, 0.22); /* Color brand con transparencia */
+    }
+    25% {
+        opacity: 1;
+        transform: translateY(0);
+        background-color: rgba(79, 107, 237, 0.18);
+    }
+    100% {
+        background-color: transparent;
+    }
+}
+
+tr.row-new {
+    animation: newRowHighlight 2.5s ease-out forwards;
+}
+
+/* Mantiene el color hover incluso si la animación sigue corriendo */
+tr.row-new:hover {
+    background-color: #f4f6fb;
+}
