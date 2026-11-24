@@ -116,6 +116,25 @@ const logPollState = {
     abortController: null,
 };
 
+// Instancia del Web Worker para polling inmune a segundo plano
+const businessWorker = window.Worker ? new Worker("poll-worker.js") : null;
+
+if (businessWorker) {
+    businessWorker.onmessage = (event) => {
+        const { type, items, reason, generation } = event.data;
+
+        // Descarta mensajes de configuraciones anteriores
+        if (generation !== state.generation) return;
+
+        if (type === "DATA") {
+            addRecords(items);
+            setStatus("ok", `En vivo · ${state.records.size} registros`);
+        } else if (type === "ERROR") {
+            setStatus("err", "Sin conexión: " + reason);
+        }
+    };
+}
+
 /* ==========================================================
    3. UTILIDADES
    ========================================================== */
@@ -631,25 +650,41 @@ function addRecords(items) {
 let isFetchingBusiness = false;
 
 async function pollBusinessApi() {
+    // 1. Si estamos en tiempo real y el navegador soporta Workers, delegamos el ciclo
+    if (!state.historyDate && !state.demoMode && businessWorker) {
+        businessWorker.postMessage({
+            type: "START",
+            payload: {
+                url: state.baseUrl + CONFIG.endpoints.business,
+                authHeader: buildAuthHeader(),
+                useAuth: CONFIG.auth.business,
+                refreshMs: CONFIG.refreshMs,
+                timeoutMs: CONFIG.requestTimeoutMs,
+                lastOffset: logPollState.lastOffset || "0",
+                paused: state.paused,
+                generation: state.generation
+            }
+        });
+        return;
+    }
+
+    // 2. Si es modo Histórico o Demo, detenemos el worker y ejecutamos consulta única en hilo principal
+    if (businessWorker) businessWorker.postMessage({ type: "STOP" });
+
     const generation = state.generation;
     const startedAt = performance.now();
 
     if (!state.paused) {
         try {
             const items = await getBusinessItems();
+            if (generation !== state.generation) return;
 
-            if (generation !== state.generation) {
-                console.warn("[POLL] Abortado por cambio de generation:", generation, state.generation);
-                return;
-            }
-
-            const agregados = addRecords(items);
+            addRecords(items);
 
             if (state.historyDate) {
                 setStatus("history", `Histórico ${state.historyDate} · ${state.records.size} registros`);
             } else {
-                const where = state.demoMode ? "Demostración" : "En vivo";
-                setStatus("ok", `${where} · ${state.records.size} registros`);
+                setStatus("ok", `Demostración · ${state.records.size} registros`);
             }
         } catch (error) {
             console.error("[POLL] Error en consulta:", error);
@@ -1119,7 +1154,7 @@ function updateSortIndicators(headerSelector, sort) {
 function buildTransactionRows(rows) {
     return rows.map((r) => {
         const isNew = state.newRecordIds.has(r.id);
-        
+
         // Si aún no tiene hora formateada o ya se actualizó su apiTimestamp, la calcula y cachea
         const ts = getRecordEffectiveTimestamp(r);
         if (!r._cachedTime || r._cachedTs !== ts) {
@@ -2035,6 +2070,12 @@ function showTab(tabName) {
 function togglePause() {
     state.paused = !state.paused;
     $("#btnPause").textContent = state.paused ? "Reanudar" : "Pausar";
+
+    // Avisar al worker
+    if (businessWorker) {
+        businessWorker.postMessage({ type: "PAUSE", payload: { paused: state.paused } });
+    }
+
     if (state.paused) setStatus("err", "En pausa");
     else pumpResponseQueue();
 }
@@ -2150,13 +2191,13 @@ function bindEvents() {
 
     // Dentro de bindEvents()
     document.addEventListener("visibilitychange", () => {
-    // Si el usuario vuelve a la pestaña y no está en pausa ni en modo histórico,
-    // dispara una consulta inmediata sin esperar al timer dormido
-    if (!document.hidden && !state.paused && !state.historyDate) {
-        clearTimeout(state.pollTimer);
-        pollBusinessApi();
-    }
-});
+        // Si el usuario vuelve a la pestaña y no está en pausa ni en modo histórico,
+        // dispara una consulta inmediata sin esperar al timer dormido
+        if (!document.hidden && !state.paused && !state.historyDate) {
+            clearTimeout(state.pollTimer);
+            pollBusinessApi();
+        }
+    });
 
     $("#btnCloseErrors").addEventListener("click", () => toggleErrorsPanel(false));
     $("#errorsHeader").addEventListener("click", (event) => {
