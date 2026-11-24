@@ -1283,6 +1283,9 @@ tr.has-exit td:first-child {
 /* ==========================================================
    16. FILTRO TIPO EXCEL EN COLUMNAS
    ========================================================== */
+/* ==========================================================
+   16. FILTRO HOMOLOGADO TIPO EXCEL EN COLUMNAS
+   ========================================================== */
 .th-filter-header {
     display: flex;
     align-items: center;
@@ -1291,15 +1294,16 @@ tr.has-exit td:first-child {
 }
 
 .btn-filter-icon {
+    position: relative;
     background: transparent;
-    border: none;
-    padding: 3px;
+    border: 1px solid transparent;
+    padding: 3px 4px;
     cursor: pointer;
     color: var(--muted);
-    border-radius: 4px;
-    display: grid;
+    border-radius: 5px;
+    display: inline-grid;
     place-items: center;
-    transition: background 0.15s, color 0.15s;
+    transition: background 0.15s, color 0.15s, border-color 0.15s;
 }
 
 .btn-filter-icon:hover {
@@ -1307,24 +1311,103 @@ tr.has-exit td:first-child {
     color: var(--ink);
 }
 
-.th-filter-dropdown {
-    display: none;
-    margin-top: 6px;
+/* Indicador visual cuando la columna tiene checkboxes activos */
+.btn-filter-icon.is-filtered {
+    background: var(--brand-soft);
+    color: var(--brand);
+    border-color: #DDD6FE;
 }
 
-.th-filter-dropdown.show {
-    display: block;
+.btn-filter-icon.is-filtered::after {
+    content: "";
+    position: absolute;
+    top: -2px;
+    right: -2px;
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--brand);
 }
 
-.th-filter-dropdown input {
+/* Menú flotante (Popover) con lista de Checkboxes */
+.excel-filter-popover {
+    position: absolute;
+    z-index: 9999;
+    width: 240px;
+    padding: 10px;
+    background: var(--card);
+    border: 1px solid var(--line-strong);
+    border-radius: var(--radius);
+    box-shadow: 0 10px 28px rgba(24, 27, 32, 0.14);
+    font-size: 12.5px;
+    color: var(--ink);
+}
+
+.excel-filter-search {
     width: 100%;
-    padding: 5px 8px;
-    border: 1px solid var(--brand);
-    border-radius: 5px;
+    padding: 6px 9px;
+    margin-bottom: 8px;
+    border: 1px solid var(--line);
+    border-radius: var(--radius-sm);
     font-size: 12px;
-    font-weight: 400;
 }
 
+.excel-filter-search:focus {
+    outline: none;
+    border-color: var(--brand);
+}
+
+.excel-filter-list {
+    max-height: 190px;
+    overflow-y: auto;
+    border-top: 1px solid var(--line);
+    border-bottom: 1px solid var(--line);
+    padding: 4px 0;
+    margin: 4px 0 8px;
+}
+
+.excel-filter-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 5px 6px;
+    border-radius: 5px;
+    cursor: pointer;
+    user-select: none;
+}
+
+.excel-filter-item:hover {
+    background: var(--bg-subtle);
+}
+
+.excel-filter-item.select-all {
+    font-weight: 600;
+    color: var(--muted);
+    padding-bottom: 6px;
+}
+
+.excel-filter-item input[type="checkbox"] {
+    accent-color: var(--brand);
+    cursor: pointer;
+    flex-shrink: 0;
+}
+
+.excel-filter-item span {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.excel-filter-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 6px;
+}
+
+.excel-filter-actions .btn {
+    padding: 4px 10px;
+    font-size: 12px;
+}
 /* ==========================================================
    17. TOOLTIPS Y CARGA
    ========================================================== */

@@ -133,12 +133,20 @@ function bpmFindCallsForStep(stepId, process) {
     return { matched, all: records.filter((r) => r.processInstanceId === process.instanceId) };
 }
 
+
+/** Regla explícita: ignorar el estado de pasos que inicien con INT. (ej. INT.Correlación) */
+function bpmShouldIgnoreState(step) {
+    const rawLabel = String(step.label || step.stepId || "").trim();
+    return /^INT\./i.test(rawLabel);
+}
+
 /** Convierte los pasos del API en nodos del diagrama con su estado (done | waiting | error). */
 function bpmBuildNodes(process) {
     const totalSteps = process.steps.length;
 
     process.nodes = process.steps.map((step, index) => {
         const type = bpmClassify(step);
+        const ignoreState = bpmShouldIgnoreState(step);
         const calls = type.kind === "service" ? bpmFindCallsForStep(step.stepId, process) : { matched: [], all: [] };
 
         const stepClass = stepStatusClass(step); // "bad" | "ok" | "warn" | "info"
@@ -156,7 +164,10 @@ function bpmBuildNodes(process) {
         const stepConcluded = stepClass === "ok";
 
         let nodeState = "done";
-        if (step.simulation) {
+        if (ignoreState) {
+            // Ignoramos el estado real del paso (ej. INT.Correlación en espera)
+            nodeState = "done";
+        }else if (step.simulation) {
             nodeState = "simulated";
         } else if (has400Error || (stepFailed && !hasSubsequentSteps)) {
             // Si hubo un HTTP 400 (Bad Request) O el paso falló y se detuvo -> ERROR / ROTO
@@ -168,7 +179,7 @@ function bpmBuildNodes(process) {
             nodeState = "waiting";
         }
 
-        return { index, step, type, calls, errors, state: nodeState };
+        return { index, step, type, calls, errors, state: nodeState, ignoreState };
     });
 }
 
@@ -708,9 +719,10 @@ function bpmLaneSvg(process, width, allProcesses) {
     if (process.role === "child" && process.link && process.link.callerProcess.role !== "parent") {
         roleText = "ANIDADO";
     }
-    const failed = process.nodes.some((n) => n.state === "error");
-    const waiting = process.nodes.some((n) => n.state === "waiting");
-    const hasWarnings = process.nodes.some((n) => n.state === "recovered");
+    const activeNodes = process.nodes.filter((n) => !n.ignoreState);
+    const failed = activeNodes.some((n) => n.state === "error");
+    const waiting = activeNodes.some((n) => n.state === "waiting");
+    const hasWarnings = activeNodes.some((n) => n.state === "recovered");
 
     const stateText = failed
         ? "Roto"
@@ -825,10 +837,12 @@ function updateStickyHeaders() {
    6. RESUMEN Y RENDER
    ========================================================== */
 function bpmOverall(nodes) {
-    if (nodes.some((n) => n.state === "error")) return { text: "Con error", css: "kpi-bad" };
-    if (nodes.some((n) => n.state === "waiting")) return { text: "En espera", css: "kpi-warn" };
-    if (nodes.some((n) => n.type.kind === "end")) return { text: "Completado", css: "kpi-ok" };
-    // Si tiene nodos "recovered" pero no "error", sigue en ejecución o completado normalmente
+    // Excluir explícitamente pasos con prefijo INT. (ej. INT.Correlación)
+    const evaluatedNodes = nodes.filter((n) => !n.ignoreState);
+
+    if (evaluatedNodes.some((n) => n.state === "error")) return { text: "Con error", css: "kpi-bad" };
+    if (evaluatedNodes.some((n) => n.state === "waiting")) return { text: "En espera", css: "kpi-warn" };
+    if (evaluatedNodes.some((n) => n.type.kind === "end")) return { text: "Completado", css: "kpi-ok" };
     return { text: "En ejecución", css: "kpi-sky" };
 }
 
@@ -899,6 +913,8 @@ function bpmStepCard(node, process) {
                 <dt>Sistema</dt><dd>${escapeHtml(s.systemText || s.system || "—")}</dd>
                 <dt>Iteraciones</dt><dd>${iterText}</dd>
                 <dt>Simulación</dt><dd>${s.simulation ? "<b>Sí (Saltado)</b>" : "No"}</dd>
+                ${node.ignoreState ? `<dt>Regla de flujo</dt><dd><span class="pill info">Estado ignorado (INT.Correlación)</span></dd>` : ""}
+                ${s.user ? `<dt>Usuario</dt><dd>${escapeHtml(s.user)}</dd>` : ""}
                 ${s.user ? `<dt>Usuario</dt><dd>${escapeHtml(s.user)}</dd>` : ""}
                 ${s.role ? `<dt>Rol</dt><dd>${escapeHtml(s.role)}</dd>` : ""}
             </dl>

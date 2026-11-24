@@ -77,11 +77,21 @@ function normalizeProcessInstance(raw) {
 
     const statusText = String(f.STATUSDECODE || f.STATUS || "Desconocido").trim();
     const auditMs = Number(f.AUDITTIMESTAMP) || 0;
-    const startMs = Number(f.STARTTIMESTAMP) || auditMs;
+    let startMs = Number(f.STARTTIMESTAMP) || 0;
+
+    // Si STARTTIMESTAMP no viene numérico, intenta obtenerlo de STARTTIMESTRING
+    if (!startMs && f.STARTTIMESTRING) {
+        const cleanStart = String(f.STARTTIMESTRING).replace(/\s*UTC$/i, "").trim();
+        const parsed = Date.parse(cleanStart);
+        if (!Number.isNaN(parsed)) startMs = parsed;
+    }
+    if (!startMs) startMs = auditMs;
 
     const isFinished = /conclu|complet|error|cancel|detenid/i.test(statusText) || [2, 3, 5, 7].includes(Number(f.STATUS));
+    // Si no viene STARTTIMESTAMP en el API, las concluidas no tienen tiempo inicial para restar
+    const hasRealStart = Boolean(Number(f.STARTTIMESTAMP));
     const effectiveEndMs = isFinished ? Math.max(auditMs, startMs) : Math.max(Date.now(), auditMs);
-    const durationMs = Math.max(0, effectiveEndMs - startMs);
+    const durationMs = (isFinished && !hasRealStart) ? 0 : Math.max(0, effectiveEndMs - startMs);
 
     let version = String(f.VERSION || f.PROCESSVERSION || "").trim();
     const rawKey = String(f.PROCESSKEYDECODE || f.PROCESSKEY || "").trim();
@@ -134,9 +144,8 @@ async function fetchInstanceList() {
 
     const startVal = document.getElementById("instStartDate")?.value || "";
     const endVal = document.getElementById("instEndDate")?.value || "";
-    const stateVal = document.getElementById("instStateFilter")?.value.trim() || "";
-    const procIdVal = document.getElementById("instProcessIdFilter")?.value.trim() || "";
-
+    const stateVal = document.getElementById("instStateFilter")?.value?.trim() || "";
+    const procIdVal = document.getElementById("instProcessIdFilter")?.value?.trim() || "";
     const startDate = formatFilterDateForApi(startVal, false);
     const endDate = formatFilterDateForApi(endVal, true);
 
@@ -198,6 +207,33 @@ function buildDemoInstances() {
     });
 }
 
+
+function applyInstancesFilters() {
+    const textInput = document.getElementById("instTextFilter");
+    const query = textInput ? textInput.value.trim().toLowerCase() : "";
+
+    // 1. Filtro del buscador de texto superior (#instTextFilter)
+    const textFiltered = instancesState.allItems.filter((item) => {
+        if (!query) return true;
+        return [
+            item.processName,
+            item.instanceId,
+            item.customId,
+            item.statusText,
+            item.processKey
+        ].join(" ").toLowerCase().includes(query);
+    });
+
+    // 2. Filtros de checkboxes por columna + Ordenamiento homologado
+    instancesState.filteredItems = TableEngine.process("instancesHeader", textFiltered, {
+        // Muestra la etiqueta amigable (ej. "Estado normal", "Iniciada") en los checkboxes de Estado
+        statusText: (item) => getInstanceStatusMeta(item.statusText).label
+    });
+
+    instancesState.currentPage = 1;
+    renderInstancesDashboard();
+}
+
 async function loadInstancesData() {
     const tbody = document.getElementById("instancesTableBody");
     if (!tbody) return;
@@ -207,15 +243,17 @@ async function loadInstancesData() {
     try {
         const list = await fetchInstanceList();
         instancesState.allItems = list.sort((a, b) => b.auditMs - a.auditMs);
-        instancesState.filteredItems = [...instancesState.allItems];
         instancesState.loadedOnce = true;
-        instancesState.currentPage = 1;
-        renderInstancesDashboard();
+
+        // Aplica los filtros activos (texto + checkboxes de columna + orden) y renderiza
+        applyInstancesFilters();
     } catch (error) {
         console.error("Error en loadInstancesData:", error);
         tbody.innerHTML = `<tr><td colspan="8" class="empty error-text">Error al consultar /getInstanceList: ${escapeHtml(error.message)}</td></tr>`;
     }
 }
+
+
 
 /* ==========================================================
    3. GRÁFICAS Y ESTADÍSTICAS DE NEGOCIO
@@ -297,24 +335,60 @@ function initInstancesCharts() {
         }
     });
 
-    instancesState.charts.durationByProcess = new Chart(canvasDur, {
-        type: "bar",
+   instancesState.charts.durationByProcess = new Chart(canvasDur, {
+        type: "line",
         data: {
             labels: [],
-            datasets: [{
-                label: "Duración promedio (s)",
-                data: [],
-                backgroundColor: COLORS.violet,
-                borderRadius: 6,
-                maxBarThickness: 32,
-            }]
+            datasets: []
         },
         options: {
             ...baseOptions,
-            plugins: { legend: { display: false } },
+            interaction: {
+                mode: "nearest",
+                axis: "xy",
+                intersect: true
+            },
+            plugins: {
+                legend: {
+                    display: true,
+                    position: "top",
+                    labels: { usePointStyle: true, boxWidth: 10 }
+                },
+                tooltip: {
+                    callbacks: {
+                        // Fecha y hora exacta de inicio guardada en $meta
+                        title: (tooltipItems) => {
+                            const item = tooltipItems[0];
+                            const meta = item?.dataset?.$meta?.[item.dataIndex];
+                            return meta?.startString ? `Inicio: ${meta.startString}` : (item?.label || "");
+                        },
+                        // Nombre del proceso + duración en segundos
+                        label: (context) => {
+                            const procName = context.dataset.label || "";
+                            return ` ${procName}: ${context.parsed.y} s`;
+                        },
+                        // ID de la instancia y estado
+                        afterLabel: (context) => {
+                            const meta = context.dataset.$meta?.[context.dataIndex];
+                            if (!meta) return "";
+                            return [
+                                ` ID: ${meta.instanceId ? meta.instanceId.slice(0, 8) + "…" : "—"}`,
+                                ` Estado: ${meta.statusText || "—"}`
+                            ];
+                        }
+                    }
+                }
+            },
             scales: {
-                y: { beginAtZero: true, grid: { color: "#EEF2F8" } },
-                x: { grid: { display: false } }
+                y: {
+                    beginAtZero: true,
+                    grid: { color: "#EEF2F8" },
+                    title: { display: true, text: "Segundos", font: { size: 11 } }
+                },
+                x: {
+                    grid: { color: "#F4F6FA" },
+                    ticks: { maxTicksLimit: 10 }
+                }
             }
         }
     });
@@ -370,19 +444,57 @@ function updateInstancesCharts(items) {
     topChart.data.datasets[0].data = sortedByVolume.map((p) => p.count);
     topChart.update("none");
 
-    const sortedByDuration = [...byProcess.entries()]
-        .map(([name, list]) => {
-            const finished = list.filter((i) => i.isFinished);
-            const target = finished.length ? finished : list;
-            const avgSec = average(target.map((i) => i.durationMs)) / 1000;
-            return { name, avgSec: Number(avgSec.toFixed(2)) };
-        })
-        .sort((a, b) => b.avgSec - a.avgSec)
-        .slice(0, 6);
 
+   // --- Gráfica de líneas: Instancias a través del tiempo por Proceso ---
     const durChart = instancesState.charts.durationByProcess;
-    durChart.data.labels = sortedByDuration.map((p) => p.name);
-    durChart.data.datasets[0].data = sortedByDuration.map((p) => p.avgSec);
+
+    const chronological = [...items].sort((a, b) => (a.startMs || a.auditMs) - (b.startMs || b.auditMs));
+
+    const timeLabels = chronological.map((item) => {
+        const str = String(item.startString || "");
+        const matchTime = str.match(/\s(\d{2}:\d{2}:\d{2})/);
+        return matchTime ? matchTime[1] : str;
+    });
+
+    const processNames = [...new Set(chronological.map((i) => i.processName))];
+    const lineDatasets = processNames.map((procName, idx) => {
+        const color = PALETTE[idx % PALETTE.length];
+        const values = [];
+        const metaList = [];
+
+        chronological.forEach((item) => {
+            if (item.processName === procName) {
+                values.push(Number((item.durationMs / 1000).toFixed(2)));
+                metaList.push({
+                    startString: item.startString,
+                    instanceId: item.instanceId,
+                    statusText: item.statusText
+                });
+            } else {
+                values.push(null);
+                metaList.push(null);
+            }
+        });
+
+        return {
+            label: procName,
+            data: values,          // Solo números y null (0 conflictos con Chart.js)
+            $meta: metaList,       // Metadatos paralelos para el tooltip
+            borderColor: color,
+            backgroundColor: color + "33",
+            borderWidth: 2.5,
+            tension: 0.15,
+            spanGaps: true,
+            pointRadius: 4.5,
+            pointHoverRadius: 7,
+            pointBackgroundColor: "#FFFFFF",
+            pointBorderColor: color,
+            pointBorderWidth: 2
+        };
+    });
+
+    durChart.data.labels = timeLabels;
+    durChart.data.datasets = lineDatasets;
     durChart.update("none");
 }
 
@@ -503,34 +615,47 @@ function inspectInstanceInBpm(instanceId, instanceDate = "") {
 }
 
 function initInstancesModule() {
-    // 1. Poner fechas de hoy 00:00 a 23:59 inmediatamente
+    // 1. Registrar la tabla de instancias en el motor homologado
+    TableEngine.register("instancesHeader", {
+        defaultSort: { field: "auditMs", direction: "desc" },
+        onChange: () => applyInstancesFilters()
+    });
+
+    // 2. Poner fechas de hoy 00:00 a 23:59 inmediatamente
     setDefaultTodayDateRange(true);
 
-    // 2. Consultar datos iniciales al cargar la página
+    // 3. Consultar datos iniciales al cargar la página
     loadInstancesData();
 
-    // 3. Delegación global de clics (garantiza que funcione sin importar cuándo se renderice)
+    // 4. Buscador de texto en tiempo real (#instTextFilter)
+    const textFilterEl = document.getElementById("instTextFilter");
+    if (textFilterEl) {
+        textFilterEl.addEventListener("input", debounce(() => applyInstancesFilters(), 250));
+    }
+
+    // 5. Delegación global de clics
     document.addEventListener("click", (event) => {
-        // Botón Consultar
         if (event.target.closest("#btnInstSearch")) {
             event.preventDefault();
             loadInstancesData();
             return;
         }
 
-        // Botón Limpiar filtros
         if (event.target.closest("#btnInstClear")) {
             event.preventDefault();
             const stateEl = document.getElementById("instStateFilter");
-            const procEl = document.getElementById("instProcessIdFilter");
+            const textEl = document.getElementById("instTextFilter");
             if (stateEl) stateEl.value = "";
-            if (procEl) procEl.value = "";
+            if (textEl) textEl.value = "";
+
+            // Limpia también los checkboxes activos de las columnas
+            TableEngine.resetFilters("instancesHeader");
+
             setDefaultTodayDateRange(true);
             loadInstancesData();
             return;
         }
 
-        // Clic en la pestaña "Instancias BPM"
         const tabBtn = event.target.closest('.tab-button[data-tab="instances"]');
         if (tabBtn) {
             setTimeout(() => {
@@ -540,14 +665,12 @@ function initInstancesModule() {
             return;
         }
 
-        // Botón "Detalle de instancia (Ver)"
         const viewBtn = event.target.closest("[data-view-instance]");
         if (viewBtn) {
             inspectInstanceInBpm(viewBtn.dataset.viewInstance, viewBtn.dataset.instanceDate);
             return;
         }
 
-        // Botones de paginado
         const pageBtn = event.target.closest("#instPagination [data-page]");
         if (pageBtn && !pageBtn.disabled) {
             instancesState.currentPage = Number(pageBtn.dataset.page);
@@ -555,15 +678,6 @@ function initInstancesModule() {
         }
     });
 
-    // 4. Enter en el campo processInstanceId
-    document.addEventListener("keydown", (event) => {
-        if (event.key === "Enter" && event.target.id === "instProcessIdFilter") {
-            event.preventDefault();
-            loadInstancesData();
-        }
-    });
-
-    // 5. Cambio en el combo de estado
     document.addEventListener("change", (event) => {
         if (event.target.id === "instStateFilter") {
             loadInstancesData();

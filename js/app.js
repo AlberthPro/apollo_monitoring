@@ -384,7 +384,9 @@ async function fetchJson(url, { auth = false } = {}) {
  * Si no hay fecha elegida (tiempo real) la URL no cambia.
  */
 function withFromDate(url) {
-    if (!state.historyDate) return url;
+   const todayApiDate = isoToApiDate(toIsoDate(new Date()));
+    if (!state.historyDate || state.historyDate === todayApiDate) return url;
+
     const separator = url.includes("?") ? "&" : "?";
     return url + separator + "fromDate=" + encodeURIComponent(state.historyDate);
 }
@@ -944,11 +946,7 @@ function renderTimes(records) {
     const opFilterEl = $("#inputFilterTimesOperacion");
     const opFilter = opFilterEl ? opFilterEl.value.trim().toLowerCase() : "";
 
-    stats = stats.filter(s => {
-        const bMatch = !blockFilter || s.block.toLowerCase().includes(blockFilter);
-        const oMatch = !opFilter || s.operation.toLowerCase().includes(opFilter);
-        return bMatch && oMatch;
-    });
+    stats = TableEngine.process("timesHeader", stats);
 
     // --- NUEVO: Lógica de Ordenamiento ---
     stats = sortRecords(stats, state.timesSort.field, state.timesSort.direction);
@@ -984,32 +982,6 @@ function getRecordEffectiveTimestamp(record) {
 }
 /* ----- Pestaña: Transacciones ----- */
 
-/** Aplica filtros (estado, bloque, texto) y orden. Lo usan la tabla y el CSV. */
-function getVisibleTransactions() {
-    const text = $("#inputFilterText").value.trim().toLowerCase();
-    const blockSelect = $("#selectBlock").value;
-    
-    const blockColEl = $("#inputFilterTxBlock");
-    const blockColFilter = blockColEl ? blockColEl.value.trim().toLowerCase() : "";
-
-    const opFilterElement = $("#inputFilterOperation");
-    const operationFilter = opFilterElement ? opFilterElement.value.trim().toLowerCase() : "";
-
-    const filtered = [...state.records.values()].filter((record) => {
-        const statusMatches = state.statusFilter === "all" || String(record.status).charAt(0) === state.statusFilter;
-        const blockSelectMatches = !blockSelect || record.buildingBlock === blockSelect;
-        const blockColMatches = !blockColFilter || record.buildingBlock.toLowerCase().includes(blockColFilter);
-        
-        const textMatches = !text || [record.operation, record.buildingBlock, record.product, record.sessionId, record.processInstanceId, record.api].join(" ").toLowerCase().includes(text);
-        
-        const apiStr = apiName(record).toLowerCase();
-        const operationMatches = !operationFilter || apiStr.includes(operationFilter) || record.operation.toLowerCase().includes(operationFilter);
-
-        return statusMatches && blockSelectMatches && blockColMatches && textMatches && operationMatches;
-    });
-    
-    return sortRecords(filtered, state.sort.field, state.sort.direction);
-}
 
 function sortRecords(records, field, direction) {
     const factor = direction === "asc" ? 1 : -1;
@@ -1059,51 +1031,27 @@ function buildTransactionRows(rows) {
 
 function getVisibleTransactions() {
     const text = $("#inputFilterText").value.trim().toLowerCase();
-    const block = $("#selectBlock").value;
-    // Captura el valor del nuevo filtro de encabezado
-    const opFilterElement = $("#inputFilterOperation");
-    const operationFilter = opFilterElement ? opFilterElement.value.trim().toLowerCase() : "";
+    const blockSelect = $("#selectBlock").value;
 
-    const filtered = [...state.records.values()].filter((record) => {
+    // 1. Filtros globales de la barra superior (chips 2xx/4xx/5xx, select y buscador)
+    const preFiltered = [...state.records.values()].filter((record) => {
         const statusMatches = state.statusFilter === "all" || String(record.status).charAt(0) === state.statusFilter;
-        const blockMatches = !block || record.buildingBlock === block;
-        const textMatches = !text || [record.operation, record.buildingBlock, record.product, record.sessionId, record.processInstanceId, record.api].join(" ").toLowerCase().includes(text);
+        const blockSelectMatches = !blockSelect || record.buildingBlock === blockSelect;
+        const textMatches = !text || [
+            record.operation, record.buildingBlock, record.product,
+            record.sessionId, record.processInstanceId, record.api
+        ].join(" ").toLowerCase().includes(text);
 
-        // Evalúa si el nombre del API o la operación coinciden con el nuevo filtro
-        const apiStr = apiName(record).toLowerCase();
-        const operationMatches = !operationFilter || apiStr.includes(operationFilter) || record.operation.toLowerCase().includes(operationFilter);
-
-        return statusMatches && blockMatches && textMatches && operationMatches;
+        return statusMatches && blockSelectMatches && textMatches;
     });
 
-    return sortRecords(filtered, state.sort.field, state.sort.direction);
+    // 2. Filtros de checkboxes por columna + Ordenamiento homologado
+    return TableEngine.process("transactionsHeader", preFiltered, {
+        operation: (r) => apiName(r),               // Muestra el nombre limpio en los checkboxes
+        receivedAt_sort: (r) => getRecordEffectiveTimestamp(r) // Ordena la hora por timestamp real
+    });
 }
 
-
-/** Abre/Cierra el filtro de columna tipo Excel */
-function toggleColumnFilter(event, dropdownId) {
-    event.stopPropagation(); // Evita que se ordene la columna
-    const dropdown = document.getElementById(dropdownId);
-
-    // Alterna la visibilidad
-    const isShowing = dropdown.classList.toggle("show");
-
-    // Si se abre, ponemos el foco automático en el input
-    if (isShowing) {
-        dropdown.querySelector("input").focus();
-    }
-}
-
-// Cierra el filtro automáticamente si haces clic fuera de la cabecera
-document.addEventListener("click", (event) => {
-    const dropdown = document.getElementById("dropdownOperacion");
-    if (dropdown && dropdown.classList.contains("show")) {
-        // Verifica si el clic ocurrió fuera del TH de "operation"
-        if (!event.target.closest("th[data-sort='operation']")) {
-            dropdown.classList.remove("show");
-        }
-    }
-});
 
 
 function renderTransactions() {
@@ -1138,7 +1086,7 @@ function exportTransactionsCsv() {
     const lines = getVisibleTransactions().map((record) =>
         columns.map((column) => `"${String(record[column] ?? "").replace(/"/g, '""')}"`).join(","));
 
-    const csv = [columns.join(","), ...lines].join("\\n");
+    const csv = [columns.join(","), ...lines].join("\n");
     const link = document.createElement("a");
     link.href = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }));
     link.download = "transacciones.csv";
@@ -1979,23 +1927,24 @@ function togglePause() {
 
 /** Guarda la configuración, vacía los datos y reinicia la consulta. */
 function applyConfig() {
-    setEnvironment($(".env-btn.active")?.dataset.env);
+  setEnvironment($(".env-btn.active")?.dataset.env);
     state.demoMode = false;
 
-    // Fecha del log: el calendario da "yyyy-mm-dd"; el API espera "dd/MM/yyyy"
     const selectedDate = $("#inputDate").value;
-    state.historyDate = selectedDate ? isoToApiDate(selectedDate) : "";
+    const isToday = selectedDate === toIsoDate(new Date());
+
+    // Solo guarda fecha histórica si es un día anterior a hoy
+    state.historyDate = (selectedDate && !isToday) ? isoToApiDate(selectedDate) : "";
 
     try {
-        // La fecha no se guarda: al abrir la página siempre arranca en tiempo real
         localStorage.setItem("obs-config", JSON.stringify({ env: state.env, demoMode: state.demoMode }));
     } catch (error) { /* el navegador puede bloquear el almacenamiento */ }
 
     showEnvironment();
-    state.generation++;                    // invalida consultas que sigan en vuelo
+    state.generation++;
     state.paused = false;
     $("#btnPause").textContent = "Pausar";
-    $("#btnPause").disabled = !!state.historyDate;   // en histórico no hay refresco que pausar
+    $("#btnPause").disabled = !!state.historyDate;
 
     clearData();
     clearTimeout(state.pollTimer);
@@ -2096,10 +2045,6 @@ function bindEvents() {
     // Filtros de columna tipo Excel (Transacciones y Tiempos)
    const filterInputIds = [
         "#inputFilterText",
-        "#inputFilterOperation",
-        "#inputFilterTxBlock",
-        "#inputFilterTimesOperacion",
-        "#inputFilterTimesBlock"
     ];
 
     filterInputIds.forEach((selector) => {
@@ -2132,10 +2077,7 @@ function bindEvents() {
     $("#btnExport").addEventListener("click", exportTransactionsCsv);
     $("#btnLoadMoreTransactions").addEventListener("click", loadMoreTransactions);
 
-    $("#transactionsHeader").addEventListener("click", (event) => {
-        const th = event.target.closest("th[data-sort]");
-        if (th) sortByColumn(state.sort, th.dataset.sort);
-    });
+    
     $("#transactionsBody").addEventListener("click", (event) => {
         const row = event.target.closest("tr[data-id]");
         if (row) openDetail(row.dataset.id);
@@ -2219,12 +2161,6 @@ function bindEvents() {
 
     document.addEventListener("keydown", (event) => {
         if (event.key === "Escape") closeDetail();
-    });
-
-    // NUEVO: Ordenar en la pestaña Tiempos
-    $("#timesHeader").addEventListener("click", (event) => {
-        const th = event.target.closest("th[data-sort]");
-        if (th) sortByColumn(state.timesSort, th.dataset.sort);
     });
 }
 
@@ -2311,12 +2247,21 @@ function loadSavedConfig() {
 function init() {
     loadSavedConfig();
     createCharts();
+
+    // Registrar las tablas en el motor homologado
+    TableEngine.register("timesHeader", {
+        defaultSort: { field: "p95", direction: "desc" },
+        onChange: () => renderActiveTab()
+    });
+
+    TableEngine.register("transactionsHeader", {
+        defaultSort: CONFIG.defaultSort,
+        onChange: () => renderActiveTab()
+    });
+
     bindEvents();
-
-    pollBusinessApi();        // consulta el API de negocio
-    fetchQueuedResponses();   // trae respuestas en segundo plano
-
-    // Redibuja la pantalla solo si llegaron datos nuevos
+    pollBusinessApi();
+    fetchQueuedResponses();
     setInterval(() => { if (state.needsRender) renderActiveTab(); }, CONFIG.refreshMs);
 }
 
