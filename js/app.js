@@ -1031,23 +1031,27 @@ function renderTimes(records) {
     let stats = [...groupBy(records, (r) => r.buildingBlock + "||" + r.operation)].map(([key, list]) => {
         const [block, operation] = key.split("||");
         const durations = list.map((r) => r.durationMs);
-        return { block, operation: operation.replace(/^services:/, ""), calls: list.length, average: average(durations), p95: percentile(durations, 95), max: Math.max(...durations), errors: list.filter((r) => r.status >= 400).length };
+        return { 
+            block, 
+            operation: operation.replace(/^services:/, ""), 
+            calls: list.length, 
+            average: average(durations), 
+            p95: percentile(durations, 95), 
+            max: Math.max(...durations), 
+            errors: list.filter((r) => r.status >= 400).length 
+        };
     });
 
     const slowest = [...stats].sort((a, b) => b.p95 - a.p95).slice(0, CONFIG.topSlowest);
     updateChart(state.charts.slowest, slowest.map((s) => s.block + " · " + s.operation.slice(0, 22)), slowest.map((s) => Math.round(s.p95)), undefined, slowest.map((s) => ["API: " + s.operation, "Bloque: " + s.block, `Llamadas: ${s.calls} · Errores: ${s.errors}`, `Promedio: ${formatDuration(s.average)} · Máx: ${formatDuration(s.max)}`]));
 
-    // --- NUEVO: Lógica de Filtrado de Tiempos ---
-    const blockFilterEl = $("#inputFilterTimesBlock");
-    const blockFilter = blockFilterEl ? blockFilterEl.value.trim().toLowerCase() : "";
-    const opFilterEl = $("#inputFilterTimesOperacion");
-    const opFilter = opFilterEl ? opFilterEl.value.trim().toLowerCase() : "";
-
-    stats = TableEngine.process("timesHeader", stats);
-
-    // --- NUEVO: Lógica de Ordenamiento ---
-    stats = sortRecords(stats, state.timesSort.field, state.timesSort.direction);
-    updateSortIndicators("#timesHeader", state.timesSort);
+   
+    stats = TableEngine.process("timesHeader", stats, {
+        // Opcional: para que los filtros muestren valores formateados como en la tabla
+        average: (s) => formatDuration(s.average),
+        p95: (s) => formatDuration(s.p95),
+        max: (s) => formatDuration(s.max)
+    });
 
     const highestP95 = Math.max(1, ...stats.map((s) => s.p95));
     $("#timesTableBody").innerHTML = stats.map((s) => {

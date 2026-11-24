@@ -123,8 +123,8 @@ const TableEngine = {
         const extractors = tableState.extractors || {};
 
         // Obtener valores únicos ordenados
-        const uniqueValues = [...new Set(rawData.map((row) => this.extractValue(row, field, extractors)))]
-            .sort((a, b) => a.localeCompare(b, CONFIG.locale));
+       const uniqueValues = [...new Set(rawData.map((row) => this.extractValue(row, field, extractors)))]
+                .sort((a, b) => a.localeCompare(b, CONFIG.locale, { numeric: true }));
 
         const currentSelected = tableState.filters.get(field); // undefined = todos seleccionados
 
