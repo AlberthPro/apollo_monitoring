@@ -516,19 +516,31 @@ function bpmLayout(processes) {
 
         // NUEVO: Buscamos el proceso que lo invocó en CUALQUIER carril superior
         if (laneIndex > 0 && process.nodes.length) {
-            // Se actualiza para limpiar tanto SP_ como SP.
-            const childClean = bpmNorm(process.name.replace(/^SP[._]/i, ""));
+            // Limpia prefijos como SP_, SP., subproceso, etc.
+            const childClean = bpmNorm(process.name.replace(/^(SP[._]|subproceso\s*)/i, ""));
             let callerNodeIndex = -1;
             let callerProcess = null;
 
-            // 1. Buscar coincidencia exacta por nombre en procesos anteriores (de abajo hacia arriba)
-            if (childClean) {
-                for (let i = laneIndex - 1; i >= 0; i--) {
+            // 1. Buscar coincidencia exacta o parcial por nombre en el proceso PADRE primero (carril 0)
+            const parentProcess = processes.find(p => p.role === "parent") || processes[0];
+            if (childClean && parentProcess) {
+                callerNodeIndex = parentProcess.nodes.findIndex(n => {
+                    // Limpiamos también el título del nodo padre por si dice "SP.Perfilamiento"
+                    const parentClean = bpmNorm(n.type.title.replace(/^SP[._]/i, ""));
+                    return parentClean && (parentClean.includes(childClean) || childClean.includes(parentClean));
+                });
+                if (callerNodeIndex !== -1) {
+                    callerProcess = parentProcess;
+                }
+            }
+
+            // 2. Si no está en el padre (ej. es un subproceso anidado real), buscar en otros carriles superiores
+            if (!callerProcess && childClean) {
+                for (let i = laneIndex - 1; i >= 1; i--) {
                     callerNodeIndex = processes[i].nodes.findIndex(n => {
-                        // Solo los subprocesos deben invocar ramas hijas
                         if (n.type.kind !== "subprocess") return false;
-                        const parentClean = bpmNorm(n.type.title);
-                        return parentClean && (parentClean.includes(childClean) || childClean.includes(parentClean));
+                        const upperClean = bpmNorm(n.type.title.replace(/^SP[._]/i, ""));
+                        return upperClean && (upperClean.includes(childClean) || childClean.includes(upperClean));
                     });
                     if (callerNodeIndex !== -1) {
                         callerProcess = processes[i];
@@ -537,26 +549,25 @@ function bpmLayout(processes) {
                 }
             }
 
-            // 2. Fallback por tiempo si no coincide el nombre
-            if (!callerProcess) {
+            // 3. Fallback por tiempo: buscar ÚNICAMENTE en el proceso padre para evitar cruces entre hermanos
+            if (!callerProcess && parentProcess) {
                 const firstTime = process.steps[0].timestamp;
                 let minDiff = Infinity;
-                for (let i = laneIndex - 1; i >= 0; i--) {
-                    let closestBefore = -1;
-                    processes[i].nodes.forEach((node, idx) => {
-                        if (node.step.timestamp <= firstTime) {
-                            const diff = firstTime - node.step.timestamp;
-                            if (diff < minDiff) {
-                                minDiff = diff;
-                                closestBefore = idx;
-                                callerProcess = processes[i];
-                            }
+                let closestBefore = -1;
+
+                parentProcess.nodes.forEach((node, idx) => {
+                    if (node.step.timestamp <= firstTime) {
+                        const diff = firstTime - node.step.timestamp;
+                        if (diff < minDiff) {
+                            minDiff = diff;
+                            closestBefore = idx;
                         }
-                    });
-                    if (closestBefore !== -1) {
-                        // El nodo que invoca es exactamente el que ocurrió antes, sin sumar 1
-                        callerNodeIndex = closestBefore;
                     }
+                });
+
+                if (closestBefore !== -1) {
+                    callerProcess = parentProcess;
+                    callerNodeIndex = closestBefore;
                 }
             }
 
@@ -846,6 +857,29 @@ function bpmOverall(nodes) {
     return { text: "En ejecución", css: "kpi-sky" };
 }
 
+function bpmFormatDuration(ms) {
+    if (!ms || ms <= 0) return "0.00 s";
+    
+    const totalSeconds = ms / 1000;
+
+    // Menor a 60 segundos -> muestra segundos con 2 decimales (ej. 45.20 s)
+    if (totalSeconds < 60) {
+        return `${totalSeconds.toFixed(2)} s`;
+    }
+
+    const hours = Math.floor(totalSeconds / 3600);
+    const minutes = Math.floor((totalSeconds % 3600) / 60);
+    const seconds = Math.floor(totalSeconds % 60);
+
+    // Mayor o igual a 60 minutos (3600 s) -> muestra horas, minutos y segundos
+    if (hours > 0) {
+        return `${hours} h ${minutes} min ${seconds} s`;
+    }
+
+    // Entre 1 minuto y 59 minutos -> muestra minutos y segundos
+    return `${minutes} min ${seconds} s`;
+}
+
 function bpmSummaryHtml() {
     const nodes = bpm.processes.flatMap((p) => p.nodes);
     const times = nodes.map((n) => n.step.timestamp).filter(Boolean);
@@ -854,13 +888,12 @@ function bpmSummaryHtml() {
     const failed = nodes.find((n) => n.state === "error");
     const failedProcess = failed && bpm.processes[failed.laneIndex];
 
-    // Agregamos un contenedor flex para alinear los KPIs y el botón de recargar
     return `
         <div style="display: flex; justify-content: space-between; align-items: stretch; gap: 16px; margin-bottom: 16px;">
             <div class="grid kpi-grid" style="flex: 1; margin: 0;">
                 <div class="card kpi kpi-brand"><small>Procesos</small><b>${bpm.processes.length}</b></div>
                 <div class="card kpi kpi-violet"><small>Pasos</small><b>${nodes.length}</b></div>
-                <div class="card kpi kpi-sky"><small>Duración</small><b>${formatDuration(duration)}</b></div>
+                <div class="card kpi kpi-sky"><small>Duración</small><b>${bpmFormatDuration(duration)}</b></div>
                 <div class="card kpi ${overall.css}"><small>Estado</small><b>${overall.text}</b></div>
             </div>
         </div>
