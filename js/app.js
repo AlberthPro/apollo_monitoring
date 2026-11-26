@@ -107,6 +107,7 @@ const state = {
     pollTimer: null,
     charts: {},
     currentTransactionsLimit: CONFIG.maxTableRows, // Paginación
+    searchResults: [],       // Registros correlacionados de la pestaña Búsqueda
 };
 
 const logPollState = {
@@ -820,6 +821,41 @@ function createCharts() {
             }
         },
     });
+
+    // Barras verticales: suma de durationMs por API única
+    state.charts.apiTotalTime = create("chartApiTotalTime", {
+        type: "bar",
+        data: {
+            labels: [],
+            datasets: [{
+                data: [],
+                backgroundColor: COLORS.brand,
+                borderRadius: 8,
+                maxBarThickness: 42
+            }]
+        },
+        options: {
+            ...baseOptions,
+            interaction: hoverByIndex,
+            plugins: plugins((item) => `Duración acumulada (durationMs): ${formatDuration(item.parsed.y)}`),
+            scales: {
+                y: {
+                    beginAtZero: true,
+                    grid: { color: "#EEF2F8" },
+                    ticks: {
+                        callback: (value) => formatDuration(value)
+                    }
+                },
+                x: {
+                    grid: { display: false },
+                    ticks: {
+                        maxRotation: 35,
+                        minRotation: 0
+                    }
+                }
+            }
+        }
+    });
 }
 
 /**
@@ -1058,6 +1094,34 @@ function renderTimes(records) {
         const barColor = s.p95 > CONFIG.verySlowMs ? COLORS.bad : s.p95 > CONFIG.slowMs ? COLORS.warn : COLORS.ok;
         return `<tr><td><b>${escapeHtml(s.block)}</b></td><td title="${escapeHtml(s.operation)}">${escapeHtml(s.operation)}</td><td>${s.calls}</td><td>${formatDuration(s.average)}</td><td>${formatDuration(s.p95)}</td><td>${formatDuration(s.max)}</td><td><span class="pill ${s.errors ? "bad" : "ok"}">${s.errors}</span></td><td><div class="load-bar"><span style="width:${(s.p95 / highestP95) * 100}%; background:${barColor}"></span></div></td></tr>`;
     }).join("") || '<tr><td colspan="8" class="empty">Esperando datos…</td></tr>';
+
+    // Agrupación por API única sumando la métrica durationMs de cada llamada en el log
+    const apiTotals = [...groupBy(records, apiName)]
+        .map(([name, list]) => {
+            const totalDurationMs = list.reduce((sum, r) => sum + (Number(r.durationMs) || 0), 0);
+            const avgMs = average(list.map((r) => r.durationMs));
+            const maxMs = Math.max(...list.map((r) => r.durationMs));
+            const errors = list.filter((r) => r.status >= 400).length;
+            const blocks = [...new Set(list.map((r) => r.buildingBlock))].join(", ");
+            return { name, totalDurationMs, calls: list.length, avgMs, maxMs, errors, blocks };
+        })
+        .sort((a, b) => b.totalDurationMs - a.totalDurationMs);
+
+    updateChart(
+        state.charts.apiTotalTime,
+        apiTotals.map((a) => a.name),
+        apiTotals.map((a) => Math.round(a.totalDurationMs)),
+        apiTotals.map((a) =>
+            a.totalDurationMs > CONFIG.verySlowMs * 2 ? COLORS.bad :
+            a.totalDurationMs > CONFIG.slowMs * 2 ? COLORS.warn : COLORS.brand
+        ),
+        apiTotals.map((a) => [
+            `Ejecuciones: ${a.calls}`,
+            `Promedio durationMs: ${formatDuration(a.avgMs)} · Máx: ${formatDuration(a.maxMs)}`,
+            `Errores: ${a.errors}`,
+            `Building block(s): ${a.blocks}`
+        ])
+    );
 }
 
 
@@ -1280,7 +1344,13 @@ function buildCorrelatedCard(record, response) {
                 <dt>Estado</dt><dd><span class="pill ${statusClass(record.status)}">${record.status}</span> ${escapeHtml(record.method)}</dd>
                 <dt>Duración</dt><dd>${formatDuration(record.durationMs)}</dd>
                 <dt>Producto</dt><dd>${escapeHtml(record.product)}</dd>
-                <dt>Sesión (sessionDialog)</dt><dd>${escapeHtml(record.sessionId)}</dd>
+                <dt>SessionDialogue</dt><dd style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
+                    <span class="mono">${escapeHtml(record.sessionId || "—")}</span>
+                    ${record.sessionId ? `
+                        <button type="button" class="view-btn" data-copy-text="${escapeHtml(record.sessionId)}" title="Copiar sessionDialog">
+                            Copy <span class="material-symbols-outlined copyJson" style="font-size:13px;">content_copy</span>
+                        </button>` : ""}
+                </dd>
                 <dt>processInstanceId</dt><dd>${escapeHtml(record.processInstanceId)}</dd>
                 <dt>id / uuid</dt><dd>${escapeHtml(record.id)}</dd>
             </dl>
@@ -1335,11 +1405,11 @@ function formatInteractiveJsonPre(rawBody) {
     const cleanJson = JSON.stringify(parsed, null, 2);
 
     return `
-        <div class="json-console-wrap">
+        <div class="json-console-wrap" data-raw-json="${escapeHtml(cleanJson)}">
             <div class="json-console-bar">
                 <span>JSON Response</span>
                 <div class="json-console-btns">
-                    <button type="button" data-j-cmd="copy">Copy <span class="material-symbols-outlined copyJson">content_copy</span> </button>
+                    <button type="button" data-j-cmd="copy">Copy <span class="material-symbols-outlined copyJson">content_copy</span></button>
                     <button type="button" data-j-cmd="expand">Expandir</button>
                     <button type="button" data-j-cmd="collapse">Colapsar</button>
                 </div>
@@ -1349,13 +1419,13 @@ function formatInteractiveJsonPre(rawBody) {
 }
 
 async function openDetail(recordId) {
-    const record = state.records.get(recordId);
+    // Busca primero en memoria general y si no está, en los resultados de Búsqueda
+    const record = state.records.get(recordId)
+        || state.searchResults.find((r) => r.id === recordId);
     if (!record) return;
 
     const drawer = $("#drawer");
 
-    // 1. Se debe reconstruir SIEMPRE la estructura base del panel.
-    // Inyectamos el Loader.spinner() directamente dentro del contenedor id="drawerResponses"
     drawer.innerHTML = `
         <button class="btn" id="btnCloseDrawer">Cerrar</button>
         <h3 style="margin:16px 0">Detalle de la llamada</h3>
@@ -1366,57 +1436,468 @@ async function openDetail(recordId) {
 
     try {
         const responses = await loadResponses(record.sessionId, true);
-        const response = findCorrelatedResponse(record, responses);
+        const response = findCorrelatedResponse(record, responses) || record.correlatedResponse || null;
         $("#drawerResponses").innerHTML = buildCorrelatedCard(record, response);
     } catch (error) {
-        // Si searchResponses falla, igual se muestran los datos del API de negocio
-        $("#drawerResponses").innerHTML = buildCorrelatedCard(record, null)
+        $("#drawerResponses").innerHTML = buildCorrelatedCard(record, record.correlatedResponse || null)
             + `<p class="error-text">No se pudo consultar searchResponses: ${escapeHtml(error.message)}</p>`;
     }
 }
-
 function closeDetail() {
     $("#drawer").classList.remove("open");
 }
 
-/** Busca por sessionDialogIdentification o por processInstanceID. */
+/**
+ * Busca por sessionDialogIdentification, processInstanceId (hijo) o customProcessId (padre)
+ * correlacionando /business, /searchResponses y /webHookMessage (si aplica para el customProcessId).
+ */
 async function searchById() {
     const query = $("#inputSearch").value.trim();
     if (!query) return;
 
-    const output = $("#searchResults");
-    output.innerHTML = Loader.spinner("Buscando coincidencias...");
+    const emptyBox = $("#searchEmptyState");
+    const dashboard = $("#searchDashboard");
+    dashboard.hidden = true;
+    emptyBox.hidden = false;
+    emptyBox.innerHTML = Loader.spinner("Correlacionando llamadas, procesos y respuestas...");
 
-    const allRecords = [...state.records.values()];
-    const matches = allRecords.filter((r) => r.sessionId === query || r.processInstanceId === query);
+    try {
+        const allRecords = [...state.records.values()];
+        const sessions = new Set();
+        const childProcessIds = new Set();
+        let resolvedCustomId = "";
 
-    // Sesiones a consultar: las de los registros encontrados...
-    const sessions = new Set(matches.map((r) => r.sessionId).filter(Boolean));
-
-    // ...las que tengan una respuesta con ese processInstanceID en caché...
-    for (const [sessionId, responses] of state.responsesBySession) {
-        if (responses.some((r) => r.processInstanceId === query)) sessions.add(sessionId);
-    }
-
-    // ...o el propio texto si parece un id de sesión (24 caracteres hex)
-    if (!sessions.size && /^[0-9a-f]{24}$/i.test(query)) sessions.add(query);
-
-    let html = "";
-    let errors = "";
-    for (const sessionId of sessions) {
-        try {
-            const responses = await loadResponses(sessionId, true);
-            const sessionRecords = allRecords.filter((r) => r.sessionId === sessionId);
-            html += `<h3 style="margin:8px 0 12px">Sesión ${escapeHtml(sessionId)}</h3>`
-                + sessionRecords.map(buildRecordCard).join("")
-                + buildResponseCards(responses);
-        } catch (error) {
-            errors += `<p class="error-text">Sesión ${escapeHtml(sessionId)}: ${escapeHtml(error.message)}</p>`;
+        // 1. Buscar coincidencias directas en registros de /business en memoria
+        for (const r of allRecords) {
+            const customId = r.customProcessId || r.customProcessInstanceId || "";
+            if (r.sessionId === query || r.processInstanceId === query || customId === query) {
+                if (r.sessionId) sessions.add(r.sessionId);
+                if (r.processInstanceId) childProcessIds.add(r.processInstanceId);
+                if (customId === query) resolvedCustomId = customId;
+            }
         }
-    }
 
-    if (!html && matches.length) html = matches.map(buildRecordCard).join("");
-    output.innerHTML = (html || '<div class="empty">No hay coincidencias en los registros recibidos.</div>') + errors;
+        // 2. Buscar en respuestas ya cacheadas de /searchResponses
+        for (const [sessionId, responses] of state.responsesBySession) {
+            if (responses.some((res) => res.processInstanceId === query || res.sessionId === query)) {
+                sessions.add(sessionId);
+            }
+        }
+
+        // 3. Si el query parece un sessionDialog (24 hex) y aún no está, agregarlo
+        if (!sessions.size && /^[0-9a-f]{24}$/i.test(query)) {
+            sessions.add(query);
+        }
+
+        // 4. Si se ingresó un customProcessId (o queremos enriquecer los hijos con su padre),
+        // consultamos findStepProcesess o webHookMessage si hay sesiones disponibles
+        for (const sessionId of sessions) {
+            try {
+                const whItems = await getWebhookMessages(sessionId);
+                const normalizedWh = whItems.map(normalizeWebhookMessage);
+                for (const m of normalizedWh) {
+                    if (m.customProcessInstanceId) {
+                        if (!resolvedCustomId && (m.customProcessInstanceId === query || childProcessIds.has(m.processInstanceId) || sessions.has(m.sessionId))) {
+                            resolvedCustomId = m.customProcessInstanceId;
+                        }
+                        if (m.customProcessInstanceId === query && m.processInstanceId) {
+                            childProcessIds.add(m.processInstanceId);
+                        }
+                    }
+                }
+            } catch (_) { /* Ignorar si webhook no devuelve datos para esa sesión */ }
+        }
+
+        // 5. Consultar /searchResponses para todas las sesiones descubiertas
+        const responsesMap = new Map(); // uuid -> responseDoc
+        const allResponsesList = [];
+
+        for (const sessionId of sessions) {
+            try {
+                const responses = await loadResponses(sessionId, true);
+                for (const res of responses) {
+                    allResponsesList.push(res);
+                    if (res.uuid) responsesMap.set(res.uuid, res);
+                    if (res.processInstanceId === query && res.sessionId) {
+                        sessions.add(res.sessionId);
+                    }
+                }
+            } catch (err) {
+                console.warn("[SEARCH] Error consultando searchResponses:", err);
+            }
+        }
+
+        // 6. Construir la lista unificada de llamadas de /business filtradas por el criterio
+        let matchedRecords = allRecords.filter((r) => {
+            const hasBlock = r.buildingBlock && r.buildingBlock !== "(sin bloque)";
+            if (!hasBlock) return false;
+
+            const customId = r.customProcessId || r.customProcessInstanceId || "";
+            return (
+                r.sessionId === query ||
+                r.processInstanceId === query ||
+                customId === query ||
+                sessions.has(r.sessionId) ||
+                childProcessIds.has(r.processInstanceId)
+            );
+        });
+
+        // Si en /business aún no estaban todos los registros pero sí vinieron en /searchResponses,
+        // reconstruimos entradas base para no perder visibilidad en las gráficas
+        const existingIds = new Set(matchedRecords.map((r) => r.id));
+        for (const res of allResponsesList) {
+            if (res.uuid && !existingIds.has(res.uuid)) {
+                matchedRecords.push({
+                    id: res.uuid,
+                    type: res.apiName || "API",
+                    api: res.apiName || "",
+                    operation: res.apiName || "(sin operación)",
+                    method: "POST",
+                    status: res.status || 200,
+                    durationMs: 0,
+                    processInstanceId: res.processInstanceId || "",
+                    customProcessId: resolvedCustomId || (customProcessIdCandidate(query, sessions, childProcessIds)),
+                    product: "—",
+                    buildingBlock: "(sin bloque)",
+                    sessionId: res.sessionId || "",
+                    apiTimestamp: res.timestampMs || 0,
+                    receivedAt: res.timestampMs || Date.now(),
+                });
+            }
+        }
+
+        // Enriquecer cada registro con customProcessId resuelto y su respuesta correlacionada
+        state.searchResults = matchedRecords.map((r) => ({
+            ...r,
+            customProcessId: r.customProcessId || r.customProcessInstanceId || resolvedCustomId || "—",
+            correlatedResponse: responsesMap.get(r.id) || null
+        }));
+
+       if (!state.searchResults.length) {
+            emptyBox.innerHTML = '<div class="empty">No se encontraron llamadas ni respuestas para el identificador proporcionado.</div>';
+            return;
+        }
+
+        emptyBox.hidden = true;
+        dashboard.hidden = false;
+
+        TableEngine.resetFilters("searchHeader");
+        renderSearchSummary(query, state.searchResults);
+        renderSearchCharts(state.searchResults);
+        renderSearchTable();
+
+    } catch (error) {
+        emptyBox.innerHTML = `<p class="error-text">Error al realizar la búsqueda: ${escapeHtml(error.message)}</p>`;
+    }
+}
+
+
+function customProcessIdCandidate(query, sessions, childIds) {
+    return (!sessions.has(query) && !childIds.has(query)) ? query : "—";
+}
+
+/** Renderiza las tarjetas KPI y llaves correlacionadas (sessionDialog, processInstanceId, customProcessId) */
+/** Renderiza las tarjetas KPI con ventana de movimiento vertical para los identificadores */
+function renderSearchSummary(query, records) {
+    const uniqueSessions = [...new Set(records.map((r) => r.sessionId).filter(Boolean))];
+    const uniqueBlocks = [...new Set(records.map((r) => r.buildingBlock).filter((b) => b && b !== "(sin bloque)"))];
+    const uniqueCustom = [...new Set(records.map((r) => r.customProcessId).filter((v) => v && v !== "—"))];
+    const totalSec = (records.reduce((acc, r) => acc + r.durationMs, 0) / 1000).toFixed(2);
+
+    const displaySession = uniqueSessions.join(", ") || "—";
+    const displayCustom = uniqueCustom.join(", ") || "—";
+
+    $("#searchKeysSummary").innerHTML = `
+        <div class="card kpi kpi-brand">
+            <small>Total APIs ejecutadas</small>
+            <b>${records.length}</b>
+        </div>
+        <div class="card kpi kpi-sky">
+            <small>Tiempo total acumulado</small>
+            <b>${totalSec} s</b>
+        </div>
+        <div class="card kpi kpi-violet">
+            <small>sessionDialogIdentification</small>
+            <div class="kpi-scroll-window" title="${escapeHtml(displaySession)}">
+                <b class="kpi-id-value">${escapeHtml(displaySession)}</b>
+            </div>
+        </div>
+        <div class="card kpi kpi-ok">
+            <small>Building block</small>
+            <b>${uniqueBlocks.length}</b>
+        </div>
+        <div class="card kpi kpi-warn">
+            <small>customProcessId</small>
+            <div class="kpi-scroll-window" title="${escapeHtml(displayCustom)}">
+                <b class="kpi-id-value">${escapeHtml(displayCustom)}</b>
+            </div>
+        </div>
+    `;
+}
+
+/** Construye y actualiza las 4 gráficas de la pestaña Búsqueda */
+function renderSearchCharts(records) {
+    // Destruir instancias previas si existen
+    ["searchApiTimes", "searchBlockCount", "searchBlockPie", "searchTrend", "searchHttpRadar"].forEach((key) => {
+        if (state.charts[key]) {
+            state.charts[key].destroy();
+            delete state.charts[key];
+        }
+    });
+
+    // Orden cronológico para tendencia y lectura
+    const ordered = [...records].sort((a, b) => getRecordEffectiveTimestamp(a) - getRecordEffectiveTimestamp(b));
+
+    // --- 1. GRÁFICA IZQUIERDA (2 GRID VERTICAL): Barras horizontales (X: segundos, Y: API) ---
+    const apiLabels = ordered.map((r, idx) => `${idx + 1}. ${apiName(r)}`);
+    const apiSeconds = ordered.map((r) => Number((r.durationMs / 1000).toFixed(3)));
+
+    state.charts.searchApiTimes = new Chart($("#chartSearchApiTimes"), {
+        type: "bar",
+        data: {
+            labels: apiLabels,
+            datasets: [{
+                label: "Tiempo de ejecución (s)",
+                data: apiSeconds,
+                backgroundColor: ordered.map((r) =>
+                    r.status >= 400 ? COLORS.bad : r.durationMs > CONFIG.slowMs ? COLORS.warn : COLORS.brand
+                ),
+                borderRadius: 6,
+                maxBarThickness: 26,
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            indexAxis: "y",
+            plugins: {
+                legend: { display: false },
+                tooltip: {
+                    callbacks: {
+                        label: (ctx) => `${ctx.parsed.x} s`,
+                        afterBody: (items) => {
+                            const r = ordered[items[0].dataIndex];
+                            return [
+                                `Building Block: ${r.buildingBlock}`,
+                                `HTTP: ${r.status} (${r.method})`,
+                                `processInstanceId: ${r.processInstanceId || "—"}`
+                            ];
+                        }
+                    }
+                }
+            },
+            scales: {
+                x: {
+                    beginAtZero: true,
+                    title: { display: true, text: "Tiempo (segundos)" },
+                    grid: { color: "#EEF2F8" }
+                },
+                y: { grid: { display: false } }
+            }
+        }
+    });
+
+    // --- Agrupación por Building Block para las 2 gráficas de la derecha ---
+    const byBlock = [...groupBy(ordered, (r) => r.buildingBlock)];
+    const blockNames = byBlock.map(([name]) => name);
+    const blockCounts = byBlock.map(([, list]) => list.length);
+    const blockTotalSeconds = byBlock.map(([, list]) =>
+        Number((list.reduce((sum, item) => sum + item.durationMs, 0) / 1000).toFixed(3))
+    );
+
+    // --- 2. DERECHA GRID 1: Relación de cantidad de APIs por Building Block ---
+    state.charts.searchBlockCount = new Chart($("#chartSearchBlockCount"), {
+        type: "bar",
+        data: {
+            labels: blockNames,
+            datasets: [{
+                label: "Llamadas API",
+                data: blockCounts,
+                backgroundColor: PALETTE,
+                borderRadius: 6,
+                maxBarThickness: 36
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: { display: false },
+                tooltip: {
+                    callbacks: {
+                        label: (ctx) => `${ctx.parsed.y} APIs ejecutadas`,
+                        afterBody: (items) => topApiLines(byBlock[items[0].dataIndex][1])
+                    }
+                }
+            },
+            scales: {
+                y: { beginAtZero: true, ticks: { stepSize: 1 }, grid: { color: "#EEF2F8" } },
+                x: { grid: { display: false } }
+            }
+        }
+    });
+
+    // --- 3. DERECHA GRID 2: Pastel de tiempo acumulado (s) por Building Block ---
+    state.charts.searchBlockPie = new Chart($("#chartSearchBlockPie"), {
+        type: "pie",
+        data: {
+            labels: blockNames,
+            datasets: [{
+                data: blockTotalSeconds,
+                backgroundColor: PALETTE,
+                borderWidth: 2,
+                borderColor: "#FFFFFF"
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: { position: "bottom", labels: { usePointStyle: true, boxWidth: 8 } },
+                tooltip: {
+                    callbacks: {
+                        label: (ctx) => `${ctx.label}: ${ctx.parsed} s totales`,
+                        afterBody: (items) => topApiLines(byBlock[items[0].dataIndex][1], 5, (name, list) => {
+                            const sec = (list.reduce((s, r) => s + r.durationMs, 0) / 1000).toFixed(2);
+                            return `• ${name}: ${sec} s`;
+                        })
+                    }
+                }
+            }
+        }
+    });
+
+    // --- 4. INFERIOR FULL WIDTH 1: Barras verticales + Línea de tendencia ---
+    // Cálculo de regresión lineal simple para la línea de tendencia
+    const n = apiSeconds.length;
+    const sumX = apiSeconds.reduce((acc, _, i) => acc + i, 0);
+    const sumY = apiSeconds.reduce((acc, val) => acc + val, 0);
+    const sumXY = apiSeconds.reduce((acc, val, i) => acc + i * val, 0);
+    const sumXX = apiSeconds.reduce((acc, _, i) => acc + i * i, 0);
+    const slope = n > 1 ? (n * sumXY - sumX * sumY) / (n * sumXX - sumX * sumX) : 0;
+    const intercept = n > 0 ? (sumY - slope * sumX) / n : 0;
+    const trendData = apiSeconds.map((_, i) => Number((intercept + slope * i).toFixed(3)));
+
+    state.charts.searchTrend = new Chart($("#chartSearchTrend"), {
+        data: {
+            labels: ordered.map((r) => apiName(r)),
+            datasets: [
+                {
+                    type: "bar",
+                    label: "Tiempo de respuesta (s)",
+                    data: apiSeconds,
+                    backgroundColor: "rgba(99, 71, 209, 0.72)",
+                    borderRadius: 6,
+                    maxBarThickness: 38,
+                    order: 2
+                },
+                {
+                    type: "line",
+                    label: "Tendencia (s)",
+                    data: trendData,
+                    borderColor: COLORS.bad,
+                    backgroundColor: COLORS.bad,
+                    borderWidth: 2.5,
+                    pointRadius: 3,
+                    tension: 0.2,
+                    fill: false,
+                    order: 1
+                }
+            ]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            interaction: { mode: "index", intersect: false },
+            plugins: {
+                legend: { display: true, position: "top" },
+                tooltip: {
+                    callbacks: {
+                        afterBody: (items) => {
+                            const r = ordered[items[0].dataIndex];
+                            return [`Hora: ${formatTime(getRecordEffectiveTimestamp(r))}`, `Bloque: ${r.buildingBlock}`];
+                        }
+                    }
+                }
+            },
+            scales: {
+                y: {
+                    beginAtZero: true,
+                    title: { display: true, text: "Segundos" },
+                    grid: { color: "#EEF2F8" }
+                },
+                x: { grid: { display: false } }
+            }
+        }
+    });
+
+    // --- 5. INFERIOR FULL WIDTH 2: Gráfica Radar de APIs vs Códigos HTTP estándar ---
+    const standardHttpCodes = [200, 201, 204, 400, 401, 403, 404, 408, 409, 422, 500, 502, 503, 504];
+    const detectedCodes = [...new Set(ordered.map((r) => r.status).filter((s) => s > 0))];
+    const radarAxisCodes = [...new Set([...standardHttpCodes, ...detectedCodes])].sort((a, b) => a - b);
+
+    const byUniqueApi = [...groupBy(ordered, apiName)];
+    const radarDatasets = byUniqueApi.map(([name, list], idx) => {
+        const color = PALETTE[idx % PALETTE.length];
+        return {
+            label: name,
+            data: radarAxisCodes.map((code) => list.filter((r) => r.status === code).length),
+            borderColor: color,
+            backgroundColor: color + "26", // ~15% opacidad
+            borderWidth: 2,
+            pointRadius: 3.5,
+            pointBackgroundColor: color
+        };
+    });
+
+    state.charts.searchHttpRadar = new Chart($("#chartSearchHttpRadar"), {
+        type: "radar",
+        data: {
+            labels: radarAxisCodes.map((c) => `HTTP ${c}`),
+            datasets: radarDatasets
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: { position: "right", labels: { usePointStyle: true, boxWidth: 8 } }
+            },
+            scales: {
+                r: {
+                    beginAtZero: true,
+                    ticks: { stepSize: 1, backdropColor: "transparent" },
+                    grid: { color: "#E2E5E9" },
+                    angleLines: { color: "#E2E5E9" }
+                }
+            }
+        }
+    });
+}
+
+/** Renderiza la tabla de Búsqueda procesada con TableEngine (filtros tipo Excel + ordenamiento) */
+function renderSearchTable() {
+    const processed = TableEngine.process("searchHeader", state.searchResults, {
+        operation: (r) => apiName(r),
+        receivedAt_sort: (r) => getRecordEffectiveTimestamp(r)
+    });
+
+    $("#searchTableCount").textContent = `${processed.length} registros`;
+
+    $("#searchTableBody").innerHTML = processed.map((r) => {
+        const ts = getRecordEffectiveTimestamp(r);
+        return `
+            <tr class="clickable" data-id="${escapeHtml(r.id)}">
+                <td>${formatTime(ts)}</td>
+                <td><b>${escapeHtml(r.buildingBlock)}</b></td>
+                <td title="${escapeHtml(r.operation)}">${escapeHtml(apiName(r))}</td>
+                <td>${escapeHtml(r.method)}</td>
+                <td><span class="pill ${statusClass(r.status)}">${r.status}</span></td>
+                <td>${formatDuration(r.durationMs)}</td>
+                <td class="mono">${escapeHtml(r.sessionId || "—")}</td>
+                <td class="mono">${escapeHtml(r.processInstanceId || "—")}</td>
+                <td class="mono">${escapeHtml(r.customProcessId || "—")}</td>
+            </tr>`;
+    }).join("") || '<tr><td colspan="9" class="empty">Sin registros que coincidan con el filtro.</td></tr>';
 }
 
 
@@ -2163,6 +2644,11 @@ function bindEvents() {
         }
     });
 
+    $("#searchTableBody").addEventListener("click", (event) => {
+        const row = event.target.closest("tr[data-id]");
+        if (row) openDetail(row.dataset.id);
+    });
+
     $("#btnCloseErrors").addEventListener("click", () => toggleErrorsPanel(false));
     $("#errorsHeader").addEventListener("click", (event) => {
         const th = event.target.closest("th[data-sort]");
@@ -2230,9 +2716,10 @@ function bindEvents() {
     $("#screenDialog").addEventListener("click", (event) => {
         if (event.target === event.currentTarget) event.currentTarget.close();   // clic en el fondo
     });
-    // Botón "Ver mensajes webhook" del panel de detalle
+
+    // Panel lateral (#drawer): colapsar JSON, copiar JSON, copiar sessionDialog e ir a Webhook
     $("#drawer").addEventListener("click", (event) => {
-        // 1. Controles de colapsar / expandir un bloque individual del JSON
+        // 1. Controles individuales ▼ / ▶ del árbol JSON
         const toggleBtn = event.target.closest(".j-toggle");
         if (toggleBtn) {
             const fold = toggleBtn.closest(".j-fold");
@@ -2241,13 +2728,20 @@ function bindEvents() {
             return;
         }
 
-        // 2. Botones globales "Expandir" / "Colapsar" de la barra superior del JSON
+        // 2. Botones de la barra superior del JSON (Copy / Expandir / Colapsar)
         const cmdBtn = event.target.closest("[data-j-cmd]");
         if (cmdBtn) {
             const wrap = cmdBtn.closest(".json-console-wrap");
-            const expand = cmdBtn.dataset.jCmd === "expand";
+            const cmd = cmdBtn.dataset.jCmd;
+
+            if (cmd === "copy") {
+                const rawJson = wrap?.dataset.rawJson || wrap?.querySelector("pre")?.textContent || "";
+                copyToClipboard(rawJson, cmdBtn);
+                return;
+            }
+
+            const expand = cmd === "expand";
             wrap.querySelectorAll(".j-fold").forEach((fold, idx) => {
-                // Al colapsar, dejamos abierto el nodo raíz (idx === 0)
                 const shouldCollapse = !expand && idx > 0;
                 fold.classList.toggle("is-collapsed", shouldCollapse);
                 const btn = fold.querySelector(":scope > .j-toggle");
@@ -2256,34 +2750,19 @@ function bindEvents() {
             return;
         }
 
-        // 3. Botón original "Ver mensajes webhook"
-        const button = event.target.closest("[data-webhook-session]");
-        if (!button) return;
-        closeDetail();
-        showTab("webhook");
-        searchWebhook(button.dataset.webhookSession);
-    });
-
-    $("#drawer").addEventListener("click", (event) => {
-        const toggleBtn = event.target.closest(".j-toggle");
-        if (toggleBtn) {
-            const fold = toggleBtn.closest(".j-fold");
-            const isCollapsed = fold.classList.toggle("is-collapsed");
-            toggleBtn.textContent = isCollapsed ? "▶" : "▼";
+        // 3. Copiar identificadores como sessionDialog
+        const copyBtn = event.target.closest("[data-copy-text]");
+        if (copyBtn) {
+            copyToClipboard(copyBtn.dataset.copyText, copyBtn);
             return;
         }
 
-        const cmdBtn = event.target.closest("[data-j-cmd]");
-        if (cmdBtn) {
-            const wrap = cmdBtn.closest(".json-console-wrap");
-            const expand = cmdBtn.dataset.jCmd === "expand";
-            wrap.querySelectorAll(".j-fold").forEach((fold, idx) => {
-                // Al colapsar, dejamos abierto el nodo raíz (idx === 0) para ver sus llaves principales
-                const shouldCollapse = !expand && idx > 0;
-                fold.classList.toggle("is-collapsed", shouldCollapse);
-                const btn = fold.querySelector(":scope > .j-toggle");
-                if (btn) btn.textContent = shouldCollapse ? "▶" : "▼";
-            });
+        // 4. Botón "Ver mensajes webhook"
+        const webhookBtn = event.target.closest("[data-webhook-session]");
+        if (webhookBtn) {
+            closeDetail();
+            showTab("webhook");
+            searchWebhook(webhookBtn.dataset.webhookSession);
         }
     });
 
@@ -2392,6 +2871,11 @@ function init() {
         defaultSort: CONFIG.defaultSort,
         onChange: () => renderActiveTab()
     });
+
+    TableEngine.register("searchHeader", {
+    defaultSort: { field: "receivedAt", direction: "asc" },
+    onChange: () => renderSearchTable()
+});
 
     bindEvents();
     pollBusinessApi();

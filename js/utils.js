@@ -30,3 +30,36 @@ document.addEventListener('mouseup', () => {
         document.body.style.cursor = ''; // Devuelve el cursor a la normalidad
     }
 });
+
+/** Copia texto al portapapeles (soporta HTTPS y entornos HTTP / file://) y da feedback en el botón */
+async function copyToClipboard(text, triggerBtn = null) {
+    if (!text) return;
+
+    try {
+        if (navigator.clipboard && window.isSecureContext) {
+            await navigator.clipboard.writeText(text);
+        } else {
+            const textarea = document.createElement("textarea");
+            textarea.value = text;
+            textarea.style.position = "fixed";
+            textarea.style.opacity = "0";
+            document.body.appendChild(textarea);
+            textarea.focus();
+            textarea.select();
+            document.execCommand("copy");
+            textarea.remove();
+        }
+
+        if (triggerBtn) {
+            const originalHtml = triggerBtn.innerHTML;
+            triggerBtn.innerHTML = 'Copiado ✓';
+            triggerBtn.disabled = true;
+            setTimeout(() => {
+                triggerBtn.innerHTML = originalHtml;
+                triggerBtn.disabled = false;
+            }, 1500);
+        }
+    } catch (err) {
+        console.error("[COPY] Error al copiar al portapapeles:", err);
+    }
+}

@@ -5,11 +5,14 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Observabilidad de APIs de negocio</title>
-    <link rel="icon" type="image/x-icon" href="https://cloudappi.net/wp-content/uploads/2026/03/tecnologias-cloudappi-_2_-768x432.webp">
+    <link rel="icon" type="image/x-icon"
+        href="https://cloudappi.net/wp-content/uploads/2026/03/tecnologias-cloudappi-_2_-768x432.webp">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Roboto:ital,wght@0,100..900;1,100..900&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200&icon_names=content_copy" />
+    <link href="https://fonts.googleapis.com/css2?family=Roboto:ital,wght@0,100..900;1,100..900&display=swap"
+        rel="stylesheet">
+    <link rel="stylesheet"
+        href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200&icon_names=content_copy" />
 
     <link rel="stylesheet" href="css/styles.css">
     <link rel="stylesheet" href="css/icons.css">
@@ -20,27 +23,29 @@
 
 <body>
     <!-- Contenedor del aviso -->
-  <div id="avisoLiquidGlass" class="overlay-glass">
-    <div class="card-liquid-glass">
-      <!-- Icono SVG de cerrar -->
-      <button class="btn-close-icon" onclick="cerrarPermanente()" aria-label="Cerrar aviso">
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-          <line x1="18" y1="6" x2="6" y2="18"></line>
-          <line x1="6" y1="6" x2="18" y2="18"></line>
-        </svg>
-      </button>
+    <div id="avisoLiquidGlass" class="overlay-glass">
+        <div class="card-liquid-glass">
+            <!-- Icono SVG de cerrar -->
+            <button class="btn-close-icon" onclick="cerrarPermanente()" aria-label="Cerrar aviso">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"
+                    stroke-linecap="round" stroke-linejoin="round">
+                    <line x1="18" y1="6" x2="6" y2="18"></line>
+                    <line x1="6" y1="6" x2="18" y2="18"></line>
+                </svg>
+            </button>
 
-      <h3>Aviso del sistema</h3>
-      <p>Diariamente a las <strong>6:00 PM</strong> se restablece el log.</p>
+            <h3>Aviso del sistema</h3>
+            <p>Diariamente a las <strong>6:00 PM</strong> se restablece el log.</p>
+        </div>
     </div>
-  </div>
     <!-- indicador de carga incial -->
     <div id="globalLoader"></div>
     <!-- ========== ENCABEZADO ========== -->
     <header class="app-header">
         <div class="logo">
             <span class="logo-icon">
-                <img src="https://cloudappi.net/wp-content/uploads/2026/03/tecnologias-cloudappi-_2_-768x432.webp" style="width: 200%;" alt="logo" />
+                <img src="https://cloudappi.net/wp-content/uploads/2026/03/tecnologias-cloudappi-_2_-768x432.webp"
+                    style="width: 200%;" alt="logo" />
             </span>
             Monitoreo Activo Proceso de Negocio en webMethods
             <span class="env-badge" id="envBadge" data-env="QA">QA</span>
@@ -181,7 +186,7 @@
 
         <!-- ===== PESTAÑA 2: TIEMPOS ===== -->
         <section class="tab-panel" id="tab-times">
-            
+
             <!-- ¡AQUÍ ESTÁN LAS GRÁFICAS QUE FALTABAN! -->
             <div class="grid grid-two">
                 <div class="card">
@@ -191,6 +196,14 @@
                 <div class="card">
                     <h3>Operaciones más lentas (P95, ms)</h3>
                     <div class="chart-box"><canvas id="chartSlowest"></canvas></div>
+                </div>
+            </div>
+
+            <!-- NUEVA GRÁFICA: Suma de durationMs por API (ancho completo) -->
+            <div class="card" style="margin-bottom: 16px;">
+                <h3>Tiempo total de ejecución por API (suma de durationMs)</h3>
+                <div class="chart-box" style="height: 320px;">
+                    <canvas id="chartApiTotalTime"></canvas>
                 </div>
             </div>
 
@@ -269,12 +282,86 @@
 
             <div class="search-box">
                 <input type="search" id="inputSearch"
-                    placeholder="Pega un sessionDialogIdentification o un processInstanceID">
+                    placeholder="Pega un sessionDialogIdentification, processInstanceID o customProcessId">
                 <button class="btn btn-solid" id="btnSearch">Buscar</button>
             </div>
 
-            <div id="searchResults">
-                <div class="empty">Escribe un identificador para ver sus llamadas y respuestas.</div>
+            <!-- Estado inicial / vacío -->
+            <div id="searchEmptyState">
+                <div class="empty">Escribe un identificador para ver sus llamadas, estadísticas y respuestas.</div>
+            </div>
+
+            <!-- Resultados estructurados (oculto hasta realizar una búsqueda con resultados) -->
+            <div id="searchDashboard" hidden>
+
+                <!-- 1. KPIs y llaves correlacionadas -->
+                <div class="grid kpi-grid" id="searchKeysSummary"></div>
+
+                <!-- 2. Grid 2x2: Izquierda (2 filas vertical) vs Derecha (2 gráficas apiladas) -->
+                <div class="search-analytics-grid">
+                    <div class="card search-span-rows">
+                        <h3>Tiempo de ejecución por API (segundos)</h3>
+                        <div class="chart-box chart-box-tall">
+                            <canvas id="chartSearchApiTimes"></canvas>
+                        </div>
+                    </div>
+
+                    <div class="card">
+                        <h3>Cantidad de APIs por Building Block</h3>
+                        <div class="chart-box">
+                            <canvas id="chartSearchBlockCount"></canvas>
+                        </div>
+                    </div>
+
+                    <div class="card">
+                        <h3>Tiempo acumulado por Building Block (s)</h3>
+                        <div class="chart-box">
+                            <canvas id="chartSearchBlockPie"></canvas>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 3. Gráficas inferiores de ancho completo -->
+                <div class="card" style="margin-bottom: 16px;">
+                    <h3>Tendencia de tiempos de respuesta por llamada (segundos)</h3>
+                    <div class="chart-box">
+                        <canvas id="chartSearchTrend"></canvas>
+                    </div>
+                </div>
+
+                <div class="card" style="margin-bottom: 16px;">
+                    <h3>Distribución de códigos HTTP por API (Radar)</h3>
+                    <div class="chart-box" style="height: 340px;">
+                        <canvas id="chartSearchHttpRadar"></canvas>
+                    </div>
+                </div>
+
+                <!-- 4. Tabla homologada con TableEngine -->
+                <div class="card">
+                    <div class="panel-header">
+                        <h3>Detalle de llamadas correlacionadas</h3>
+                        <span class="muted-text" id="searchTableCount">0 registros</span>
+                    </div>
+                    <div class="table-wrap">
+                        <table>
+                            <thead>
+                                <tr id="searchHeader">
+                                    <th data-sort="receivedAt">Hora</th>
+                                    <th data-sort="buildingBlock" data-filter="buildingBlock">Building block</th>
+                                    <th data-sort="operation" data-filter="operation">API / Operación</th>
+                                    <th data-sort="method" data-filter="method">Método</th>
+                                    <th data-sort="status" data-filter="status">Estado</th>
+                                    <th data-sort="durationMs">Duración</th>
+                                    <th data-sort="sessionId" data-filter="sessionId">sessionDialog</th>
+                                    <th data-sort="processInstanceId" data-filter="processInstanceId">processInstanceId
+                                    </th>
+                                    <th data-sort="customProcessId" data-filter="customProcessId">customProcessId</th>
+                                </tr>
+                            </thead>
+                            <tbody id="searchTableBody"></tbody>
+                        </table>
+                    </div>
+                </div>
             </div>
         </section>
 
@@ -303,109 +390,111 @@
         </section>
 
         <!-- ===== PESTAÑA 7: INSTANCIAS DE PROCESO (webMethods) ===== -->
-<section class="tab-panel" id="tab-instances">
-    <!-- Barra de filtros para el API /getInstanceList -->
-    <div class="toolbar">
-        <div class="date-picker">
-            <label for="instStartDate">Inicio:</label>
-            <input type="datetime-local" id="instStartDate">
-        </div>
-        <div class="date-picker">
-            <label for="instEndDate">Fin:</label>
-            <input type="datetime-local" id="instEndDate">
-        </div>
-        <select id="instStateFilter" aria-label="Estado del proceso">
-    <option value="">Todos los estados</option>
-    <option value="Iniciadas">Iniciadas</option>
-    <option value="Concluida">Concluida</option>
-    <option value="Suspendido">Suspendido</option>
-    <option value="Resumido">Resumido</option>
-    <option value="Cancelado">Cancelado</option>
-    <option value="Detenido">Detenido</option>
-    <option value="Error">Error</option>
-</select>
-        <input type="search" id="instTextFilter" placeholder="Filtrar por nombre, ID o customId...">
-        <button class="btn btn-solid" id="btnInstSearch">Consultar</button>
-        <button class="btn" id="btnInstClear">Limpiar filtros</button>
-    </div>
+        <section class="tab-panel" id="tab-instances">
+            <!-- Barra de filtros para el API /getInstanceList -->
+            <div class="toolbar">
+                <div class="date-picker">
+                    <label for="instStartDate">Inicio:</label>
+                    <input type="datetime-local" id="instStartDate">
+                </div>
+                <div class="date-picker">
+                    <label for="instEndDate">Fin:</label>
+                    <input type="datetime-local" id="instEndDate">
+                </div>
+                <select id="instStateFilter" aria-label="Estado del proceso">
+                    <option value="">Todos los estados</option>
+                    <option value="Iniciadas">Iniciadas</option>
+                    <option value="Concluida">Concluida</option>
+                    <option value="Suspendido">Suspendido</option>
+                    <option value="Resumido">Resumido</option>
+                    <option value="Cancelado">Cancelado</option>
+                    <option value="Detenido">Detenido</option>
+                    <option value="Error">Error</option>
+                </select>
+                <input type="search" id="instTextFilter" placeholder="Filtrar por nombre, ID o customId...">
+                <button class="btn btn-solid" id="btnInstSearch">Consultar</button>
+                <button class="btn" id="btnInstClear">Limpiar filtros</button>
+            </div>
 
-    <!-- KPIs de Negocio -->
-    <div class="grid kpi-grid">
-        <div class="card kpi kpi-brand">
-            <small>Total Instancias</small>
-            <b id="kpiInstTotal">0</b>
-        </div>
-        <div class="card kpi kpi-ok">
-            <small>Tasa de Conclusión</small>
-            <b id="kpiInstSuccessRate">0%</b>
-        </div>
-        <div class="card kpi kpi-sky">
-            <small>Duración Promedio (Concluidas)</small>
-            <b id="kpiInstAvgDuration">0 s</b>
-        </div>
-        <div class="card kpi kpi-warn">
-            <small>En Ejecución / Pendientes</small>
-            <b id="kpiInstActive">0</b>
-        </div>
-        <div class="card kpi kpi-bad">
-            <small>Con Error / Canceladas</small>
-            <b id="kpiInstErrors">0</b>
-        </div>
-    </div>
+            <!-- KPIs de Negocio -->
+            <div class="grid kpi-grid">
+                <div class="card kpi kpi-brand">
+                    <small>Total Instancias</small>
+                    <b id="kpiInstTotal">0</b>
+                </div>
+                <div class="card kpi kpi-ok">
+                    <small>Tasa de Conclusión</small>
+                    <b id="kpiInstSuccessRate">0%</b>
+                </div>
+                <div class="card kpi kpi-sky">
+                    <small>Duración Promedio (Concluidas)</small>
+                    <b id="kpiInstAvgDuration">0 s</b>
+                </div>
+                <div class="card kpi kpi-warn">
+                    <small>En Ejecución / Pendientes</small>
+                    <b id="kpiInstActive">0</b>
+                </div>
+                <div class="card kpi kpi-bad">
+                    <small>Con Error / Canceladas</small>
+                    <b id="kpiInstErrors">0</b>
+                </div>
+            </div>
 
-    <!-- Gráficas de Resumen y Negocio -->
-    <div class="grid grid-wide-left">
-        <div class="card">
-            <h3>Instancias creadas por hora (Timeline)</h3>
-            <div class="chart-box"><canvas id="chartInstTimeline"></canvas></div>
-        </div>
-        <div class="card">
-            <h3>Distribución por Estado</h3>
-            <div class="chart-box"><canvas id="chartInstStatus"></canvas></div>
-        </div>
-    </div>
+            <!-- Gráficas de Resumen y Negocio -->
+            <div class="grid grid-wide-left">
+                <div class="card">
+                    <h3>Instancias creadas por hora (Timeline)</h3>
+                    <div class="chart-box"><canvas id="chartInstTimeline"></canvas></div>
+                </div>
+                <div class="card">
+                    <h3>Distribución por Estado</h3>
+                    <div class="chart-box"><canvas id="chartInstStatus"></canvas></div>
+                </div>
+            </div>
 
-    <div class="grid grid-two">
-        <div class="card">
-            <h3>Top Procesos con mayor volumen</h3>
-            <div class="chart-box"><canvas id="chartInstTopProcesses"></canvas></div>
-        </div>
-        <div class="card">
-            <h3>Evolución de Instancias por Proceso (segundos)</h3>
-            <div class="chart-box"><canvas id="chartInstDurationByProcess"></canvas></div>
-        </div>
-    </div>
+            <div class="grid grid-two">
+                <div class="card">
+                    <h3>Top Procesos con mayor volumen</h3>
+                    <div class="chart-box"><canvas id="chartInstTopProcesses"></canvas></div>
+                </div>
+                <div class="card">
+                    <h3>Evolución de Instancias por Proceso (segundos)</h3>
+                    <div class="chart-box"><canvas id="chartInstDurationByProcess"></canvas></div>
+                </div>
+            </div>
 
-    <!-- Tabla de Instancias -->
-    <div class="card">
-        <div class="panel-header">
-            <h3>Listado de Instancias</h3>
-            <span class="muted-text" id="instTableCount">0 registros</span>
-        </div>
-        <div class="table-wrap">
-            <table>
-                <thead>
-                    <tr id="instancesHeader">
-                        <th data-sort="statusText" data-filter="statusText">Estado</th>
-                        <th data-sort="lastUpdate">Última actualización</th>
-                        <th data-sort="startTime">Fecha/Hora de inicio</th>
-                        <th data-sort="processName" data-filter="processName">Nombre de proceso</th>
-                        <th data-sort="version" data-filter="version">Versión</th>
-                        <th data-sort="instanceId">ID de instancia de proceso</th>
-                        <th data-sort="durationState" data-filter="durationState">Duración</th>
-                        <th>Detalles</th>
-                    </tr>
-                </thead>
-                <tbody id="instancesTableBody">
-                    <tr><td colspan="8" class="empty">Haz clic en "Consultar" para cargar las instancias.</td></tr>
-                </tbody>
-            </table>
-        </div>
+            <!-- Tabla de Instancias -->
+            <div class="card">
+                <div class="panel-header">
+                    <h3>Listado de Instancias</h3>
+                    <span class="muted-text" id="instTableCount">0 registros</span>
+                </div>
+                <div class="table-wrap">
+                    <table>
+                        <thead>
+                            <tr id="instancesHeader">
+                                <th data-sort="statusText" data-filter="statusText">Estado</th>
+                                <th data-sort="lastUpdate">Última actualización</th>
+                                <th data-sort="startTime">Fecha/Hora de inicio</th>
+                                <th data-sort="processName" data-filter="processName">Nombre de proceso</th>
+                                <th data-sort="version" data-filter="version">Versión</th>
+                                <th data-sort="instanceId">ID de instancia de proceso</th>
+                                <th data-sort="durationState" data-filter="durationState">Duración</th>
+                                <th>Detalles</th>
+                            </tr>
+                        </thead>
+                        <tbody id="instancesTableBody">
+                            <tr>
+                                <td colspan="8" class="empty">Haz clic en "Consultar" para cargar las instancias.</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
 
-        <!-- Paginado -->
-        <div class="pagination-bar" id="instPagination"></div>
-    </div>
-</section>
+                <!-- Paginado -->
+                <div class="pagination-bar" id="instPagination"></div>
+            </div>
+        </section>
 
         <!-- ===== PESTAÑA 6: webMethods (diagrama BPM) ===== -->
         <section class="tab-panel" id="tab-webmethods">
@@ -486,18 +575,18 @@
     <script>
         const CLAVE_STORAGE = 'aviso_log_6pm_visto';
 
-    // Al cargar la página, revisa si ya fue cerrado antes
-    document.addEventListener('DOMContentLoaded', () => {
-      if (!localStorage.getItem(CLAVE_STORAGE)) {
-        document.getElementById('avisoLiquidGlass').style.display = 'flex';
-      }
-    });
+        // Al cargar la página, revisa si ya fue cerrado antes
+        document.addEventListener('DOMContentLoaded', () => {
+            if (!localStorage.getItem(CLAVE_STORAGE)) {
+                document.getElementById('avisoLiquidGlass').style.display = 'flex';
+            }
+        });
 
-    // Cierra y guarda en el navegador para no volver a mostrarlo
-    function cerrarPermanente() {
-      document.getElementById('avisoLiquidGlass').style.display = 'none';
-      localStorage.setItem(CLAVE_STORAGE, 'true');
-    }
+        // Cierra y guarda en el navegador para no volver a mostrarlo
+        function cerrarPermanente() {
+            document.getElementById('avisoLiquidGlass').style.display = 'none';
+            localStorage.setItem(CLAVE_STORAGE, 'true');
+        }
     </script>
 </body>
 
