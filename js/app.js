@@ -2195,7 +2195,6 @@ function buildIdCell(value, buttonHtml) {
 
 /** Mismo host que la URL base, otro path: .../getTaskData?taskId=... */
 function buildTaskDataUrl(taskId) {
-    const origin = currentEnvironment().host;
     const url = CONFIG.basePath + CONFIG.endpoints.taskData + "?taskId=" + encodeURIComponent(taskId);
     return CONFIG.sendFromDateToTaskData ? withFromDate(url) : url;
 }
@@ -2279,7 +2278,7 @@ let stepsRequestId = 0;   // evita que una respuesta lenta pise a una más recie
 
 /** Mismo host que la URL base, otro path: .../findStepProcesess?instanceID=... */
 function buildStepsUrl(instanceId) {
-    const url = currentEnvironment().host + CONFIG.endpoints.findSteps
+    const url = currentEnvironment().host + CONFIG.basePath + CONFIG.endpoints.findSteps
         + "?instanceID=" + encodeURIComponent(instanceId);
     return CONFIG.sendFromDateToSteps ? withFromDate(url) : url;
 }
