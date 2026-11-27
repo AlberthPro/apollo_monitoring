@@ -2196,7 +2196,7 @@ function buildIdCell(value, buttonHtml) {
 /** Mismo host que la URL base, otro path: .../getTaskData?taskId=... */
 function buildTaskDataUrl(taskId) {
     const origin = currentEnvironment().host;
-    const url = origin + CONFIG.endpoints.taskData + "?taskId=" + encodeURIComponent(taskId);
+    const url = CONFIG.basePath + CONFIG.endpoints.taskData + "?taskId=" + encodeURIComponent(taskId);
     return CONFIG.sendFromDateToTaskData ? withFromDate(url) : url;
 }
 
