@@ -7,7 +7,7 @@
    ========================================================== */
 
 const INSTANCES_CONFIG = {
-    endpoint: "/rad/PD_CFG_Administracion.api:reportes_API/getInstanceList",
+    endpoint: "/rad/endpoints:api/getInstanceList",
     pageSize: 15,
 };
 
