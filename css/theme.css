@@ -1,0 +1,262 @@
+/* ==========================================================
+   TEMA OSCURO (Activar con <html data-theme="dark"> o <body data-theme="dark">)
+   ========================================================== */
+[data-theme="dark"] {
+    /* Superficies y tipografía base */
+    --bg: #0D1015;
+    --bg-subtle: #161B22;
+    --card: #13171F;
+    --ink: #F0F3F8;
+    --muted: #8B949E;
+    --line: #232A35;
+    --line-strong: #323C4B;
+
+    /* Acentos adaptados para alto contraste en oscuro */
+    --brand: #7C62E6;
+    --brand-hover: #8F77F0;
+    --brand-soft: rgba(124, 98, 230, 0.16);
+    --coral: #F06473;
+    --coral-soft: rgba(240, 100, 115, 0.16);
+
+    /* Estados semánticos con fondos translúcidos suaves */
+    --ok: #22C55E;
+    --ok-soft: rgba(34, 197, 94, 0.15);
+    --warn: #F59E0B;
+    --warn-soft: rgba(245, 158, 11, 0.15);
+    --bad: #EF4444;
+    --bad-soft: rgba(239, 68, 68, 0.16);
+    --sky: #38BDF8;
+    --violet: #A78BFA;
+    --violet-soft: rgba(167, 139, 250, 0.16);
+    --teal: #2DD4BF;
+    --teal-ink: #5EEAD4;
+    --teal-soft: rgba(45, 212, 191, 0.15);
+
+    color-scheme: dark;
+}
+
+/* ---- Ajustes específicos de componentes en Tema Oscuro ---- */
+
+/* Sombras más profundas */
+[data-theme="dark"] .drawer {
+    box-shadow: -8px 0 32px rgba(0, 0, 0, 0.45);
+}
+
+[data-theme="dark"] .screen-dialog {
+    box-shadow: 0 24px 60px rgba(0, 0, 0, 0.6);
+}
+
+[data-theme="dark"] .screen-dialog::backdrop {
+    background: rgba(5, 7, 10, 0.72);
+}
+
+[data-theme="dark"] .excel-filter-popover {
+    box-shadow: 0 12px 32px rgba(0, 0, 0, 0.5);
+}
+
+/* Badges y etiquetas con texto claro legible */
+[data-theme="dark"] .pill.ok   { color: #4ADE80; }
+[data-theme="dark"] .pill.warn { color: #FBBF24; }
+[data-theme="dark"] .pill.bad  { color: #F87171; }
+[data-theme="dark"] .pill.exit { border-color: rgba(167, 139, 250, 0.35); }
+
+[data-theme="dark"] .env-btn.active {
+    background: #1E2430;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.35);
+}
+
+[data-theme="dark"] .env-badge[data-env="DEV"] {
+    color: #4ADE80;
+}
+
+/* KPIs Liquid Glass en versión cristal ahumado */
+[data-theme="dark"] .kpi {
+    background: linear-gradient(
+        135deg,
+        rgba(28, 34, 46, 0.85) 0%,
+        rgba(19, 23, 31, 0.65) 100%
+    );
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    box-shadow:
+        0 8px 24px -6px rgba(0, 0, 0, 0.4),
+        inset 0 1px 1px rgba(255, 255, 255, 0.07);
+}
+
+[data-theme="dark"] .kpi:hover {
+    border-color: var(--kpi-border, rgba(255, 255, 255, 0.18));
+    box-shadow:
+        0 14px 30px -8px var(--kpi-shadow, rgba(0, 0, 0, 0.55)),
+        inset 0 1px 1px rgba(255, 255, 255, 0.12);
+}
+
+[data-theme="dark"] .kpi-brand {
+    --kpi-glow: rgba(124, 98, 230, 0.45);
+    --kpi-border: rgba(124, 98, 230, 0.45);
+    --kpi-shadow: rgba(124, 98, 230, 0.25);
+    background: linear-gradient(135deg, rgba(28, 34, 46, 0.9) 0%, rgba(124, 98, 230, 0.14) 100%);
+}
+
+[data-theme="dark"] .kpi-ok {
+    --kpi-glow: rgba(34, 197, 94, 0.4);
+    --kpi-border: rgba(34, 197, 94, 0.4);
+    --kpi-shadow: rgba(34, 197, 94, 0.22);
+    background: linear-gradient(135deg, rgba(28, 34, 46, 0.9) 0%, rgba(34, 197, 94, 0.12) 100%);
+}
+
+[data-theme="dark"] .kpi-sky {
+    --kpi-glow: rgba(56, 189, 248, 0.4);
+    --kpi-border: rgba(56, 189, 248, 0.4);
+    --kpi-shadow: rgba(56, 189, 248, 0.22);
+    background: linear-gradient(135deg, rgba(28, 34, 46, 0.9) 0%, rgba(56, 189, 248, 0.12) 100%);
+}
+
+[data-theme="dark"] .kpi-warn {
+    --kpi-glow: rgba(245, 158, 11, 0.4);
+    --kpi-border: rgba(245, 158, 11, 0.4);
+    --kpi-shadow: rgba(245, 158, 11, 0.22);
+    background: linear-gradient(135deg, rgba(28, 34, 46, 0.9) 0%, rgba(245, 158, 11, 0.12) 100%);
+}
+
+[data-theme="dark"] .kpi-bad {
+    --kpi-glow: rgba(239, 68, 68, 0.4);
+    --kpi-border: rgba(239, 68, 68, 0.4);
+    --kpi-shadow: rgba(239, 68, 68, 0.25);
+    background: linear-gradient(135deg, rgba(28, 34, 46, 0.9) 0%, rgba(239, 68, 68, 0.14) 100%);
+}
+
+[data-theme="dark"] .kpi-violet {
+    --kpi-glow: rgba(167, 139, 250, 0.4);
+    --kpi-border: rgba(167, 139, 250, 0.4);
+    --kpi-shadow: rgba(167, 139, 250, 0.22);
+    background: linear-gradient(135deg, rgba(28, 34, 46, 0.9) 0%, rgba(167, 139, 250, 0.14) 100%);
+}
+
+/* KPI clicable y filas especiales */
+[data-theme="dark"] .kpi-clickable:hover {
+    background: rgba(239, 68, 68, 0.08);
+}
+
+[data-theme="dark"] tr.has-exit td {
+    background: rgba(167, 139, 250, 0.07);
+}
+
+[data-theme="dark"] tr.row-new:hover {
+    background-color: rgba(124, 98, 230, 0.12);
+}
+
+/* Banners y links de pantallas */
+[data-theme="dark"] .exit-banner {
+    border-color: rgba(167, 139, 250, 0.3);
+}
+
+[data-theme="dark"] .screen-link {
+    border-color: rgba(45, 212, 191, 0.35);
+}
+
+[data-theme="dark"] .screen-link:hover {
+    background: rgba(45, 212, 191, 0.25);
+}
+
+[data-theme="dark"] .btn-filter-icon.is-filtered {
+    border-color: rgba(124, 98, 230, 0.4);
+}
+
+/* Tooltips */
+[data-theme="dark"] [data-tooltip]::after {
+    background: #232A35;
+    color: var(--ink);
+    border: 1px solid var(--line-strong);
+}
+
+[data-theme="dark"] [data-tooltip]::before {
+    border-color: #232A35 transparent transparent transparent;
+}
+
+/* ==========================================================
+   DIAGRAMA BPM EN TEMA OSCURO
+   ========================================================== */
+[data-theme="dark"] .bpm-card {
+    background-color: #0B0E13;
+    background-image: radial-gradient(#1E2530 1px, transparent 1px);
+}
+
+[data-theme="dark"] .bpm-alert {
+    border-color: rgba(239, 68, 68, 0.35);
+    color: #FCA5A5;
+}
+
+[data-theme="dark"] .lane-bg {
+    fill: rgba(255, 255, 255, 0.02);
+}
+
+[data-theme="dark"] .lane-head {
+    fill: rgba(22, 27, 34, 0.92) !important;
+}
+
+[data-theme="dark"] .lane-head.is-error {
+    fill: rgba(239, 68, 68, 0.18) !important;
+}
+
+[data-theme="dark"] .bpm-node .shape {
+    fill: #181E28;
+    stroke: var(--line-strong);
+}
+
+[data-theme="dark"] .bpm-node:hover .shape,
+[data-theme="dark"] .bpm-node:focus-visible .shape,
+[data-theme="dark"] .bpm-node.is-selected .shape {
+    stroke: var(--brand);
+    filter: drop-shadow(0 4px 12px rgba(124, 98, 230, 0.28));
+}
+
+[data-theme="dark"] .bpm-node.is-error .shape {
+    fill: rgba(239, 68, 68, 0.14);
+}
+
+[data-theme="dark"] .kind-split .shape,
+[data-theme="dark"] .kind-join .shape {
+    fill: rgba(245, 158, 11, 0.14);
+}
+
+[data-theme="dark"] .glyph {
+    stroke: #FBBF24;
+}
+
+[data-theme="dark"] .err-badge circle {
+    stroke: #181E28;
+}
+
+[data-theme="dark"] .bpm-edge {
+    stroke: #475569;
+}
+
+/* ==========================================================
+   MODAL AVISO LIQUID GLASS — TEMA OSCURO
+   ========================================================== */
+[data-theme="dark"] .overlay-glass {
+    background: rgba(5, 7, 10, 0.65);
+}
+
+[data-theme="dark"] .card-liquid-glass {
+    background: linear-gradient(
+        135deg,
+        rgba(30, 36, 48, 0.86) 0%,
+        rgba(19, 23, 31, 0.72) 100%
+    );
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    box-shadow:
+        0 24px 48px rgba(0, 0, 0, 0.55),
+        inset 0 1px 1px rgba(255, 255, 255, 0.12),
+        inset 0 -1px 2px rgba(124, 98, 230, 0.15);
+}
+
+[data-theme="dark"] .btn-close-icon {
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    background: rgba(255, 255, 255, 0.06);
+}
+
+[data-theme="dark"] .btn-close-icon:hover {
+    background: rgba(255, 255, 255, 0.14);
+    color: var(--ink);
+    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.35);
+}

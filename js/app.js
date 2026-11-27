@@ -46,8 +46,10 @@ const CONFIG = {
     refreshMs: 3000,          // cada cuánto se consulta el API
     requestTimeoutMs: 15000,   // tiempo máximo de espera por consulta
     maxRecords: 3000,         // registros guardados en memoria (contador máximo)
-    maxTableRows: 200,        // filas visibles iniciales en la tabla de transacciones
-    liveChartPoints: 90,      // puntos de la gráfica en vivo
+    maxTableRows: 200,     
+    maxRecords: 10000,   // filas visibles iniciales en la tabla de transacciones
+    liveChartPoints: 90,   
+    liveWindowMs: 60 * 60 * 1000,   // puntos de la gráfica en vivo
     topBlocks: 8,             // barras en "promedio por building block"
     topSlowest: 7,            // barras en "operaciones más lentas"
     responsesPerCycle: 2,     // sesiones cuyas respuestas se piden por ciclo
@@ -915,19 +917,30 @@ function renderDashboard(records) {
     $("#kpiErrors").textContent = errorCount;
 
     // Área en vivo: el tooltip muestra API, bloque y estado de cada punto
-    const latest = records.slice(-CONFIG.liveChartPoints);
+    const timedRecords = records
+        .map((r) => ({ record: r, ts: getRecordEffectiveTimestamp(r) }))
+        .filter(({ ts }) => ts > 0)
+        .sort((a, b) => a.ts - b.ts); // Orden cronológico real (de izquierda a derecha)
+
+    const latestTs = timedRecords.length
+        ? timedRecords[timedRecords.length - 1].ts
+        : 0;
+    const windowStartTs = latestTs - CONFIG.liveWindowMs;
+
+    // Conserva todos los puntos dentro de la ventana de 1 hora respecto al último dato en memoria
+    const liveWindowRecords = timedRecords.filter(({ ts }) => ts >= windowStartTs);
+
     updateChart(
         state.charts.live,
-        latest.map((r) => formatTime(r.receivedAt)),
-        latest.map((r) => Math.round(r.durationMs)),
+        liveWindowRecords.map(({ ts }) => formatTime(ts)),
+        liveWindowRecords.map(({ record }) => Math.round(record.durationMs)),
         undefined,
-        latest.map((r) => [
-            "API: " + apiName(r),
-            "Bloque: " + r.buildingBlock,
-            `Estado: ${r.status} ${r.method}`,
+        liveWindowRecords.map(({ record }) => [
+            "API: " + apiName(record),
+            "Bloque: " + record.buildingBlock,
+            `Estado: ${record.status} ${record.method}`,
         ])
     );
-
     // Dona de códigos de estado: el tooltip lista las APIs con ese código
     const byStatus = groupBy(records, (r) => r.status);
     const statusCodes = [...byStatus.keys()].sort();
@@ -984,85 +997,36 @@ function renderErrorsPanel(records) {
     $("#errorsBody").innerHTML = buildTransactionRows(errors.slice(0, CONFIG.maxTableRows));
 }
 
-/* ----- Pestaña: Tiempos de respuesta ----- */
-/*function renderTimes(records) {
-    // Histograma: límites en ms de cada rango
+
+function renderTimes(records) {
+    // Toma los datos recientes en memoria (ventana de 1 hora respecto al registro más reciente)
+    const timed = records
+        .map((r) => ({ record: r, ts: getRecordEffectiveTimestamp(r) }))
+        .filter(({ ts }) => ts > 0);
+
+    const latestTs = timed.reduce((max, item) => (item.ts > max ? item.ts : max), 0);
+    const windowStart = latestTs - (CONFIG.liveWindowMs || 60 * 60 * 1000);
+
+    const activeRecords = timed
+        .filter(({ ts }) => ts >= windowStart)
+        .map(({ record }) => record);
+
     const limits = [100, 300, 600, 1000, 2000, 5000];
     const buckets = Array.from({ length: limits.length + 1 }, () => []);
-    for (const record of records) {
+    for (const record of activeRecords) {
         const index = limits.findIndex((limit) => record.durationMs < limit);
         buckets[index === -1 ? limits.length : index].push(record);
     }
+
     updateChart(
         state.charts.histogram,
-        state.charts.histogram.data.labels,
+        ["<100 ms", "100–300", "300–600", "600 ms–1 s", "1–2 s", "2–5 s", ">5 s"],
         buckets.map((list) => list.length),
         undefined,
         buckets.map((list) => topApiLines(list))
     );
-
-    // Estadísticas por bloque + operación, ordenadas por P95
-    const stats = [...groupBy(records, (r) => r.buildingBlock + "||" + r.operation)]
-        .map(([key, list]) => {
-            const [block, operation] = key.split("||");
-            const durations = list.map((r) => r.durationMs);
-            return {
-                block,
-                operation: operation.replace(/^services:/, ""),
-                calls: list.length,
-                average: average(durations),
-                p95: percentile(durations, 95),
-                max: Math.max(...durations),
-                errors: list.filter((r) => r.status >= 400).length,
-            };
-        })
-        .sort((a, b) => b.p95 - a.p95);
-
-    const slowest = stats.slice(0, CONFIG.topSlowest);
-    updateChart(
-        state.charts.slowest,
-        slowest.map((s) => s.block + " · " + s.operation.slice(0, 22)),
-        slowest.map((s) => Math.round(s.p95)),
-        undefined,
-        slowest.map((s) => [
-            "API: " + s.operation,
-            "Bloque: " + s.block,
-            `Llamadas: ${s.calls} · Errores: ${s.errors}`,
-            `Promedio: ${formatDuration(s.average)} · Máx: ${formatDuration(s.max)}`,
-        ])
-    );
-
-    // Tabla de detalle
-    const highestP95 = Math.max(1, ...stats.map((s) => s.p95));
-    $("#timesTableBody").innerHTML = stats.map((s) => {
-        const barColor = s.p95 > CONFIG.verySlowMs ? COLORS.bad
-                       : s.p95 > CONFIG.slowMs ? COLORS.warn : COLORS.ok;
-        return `
-            <tr>
-                <td><b>${escapeHtml(s.block)}</b></td>
-                <td title="${escapeHtml(s.operation)}">${escapeHtml(s.operation)}</td>
-                <td>${s.calls}</td>
-                <td>${formatDuration(s.average)}</td>
-                <td>${formatDuration(s.p95)}</td>
-                <td>${formatDuration(s.max)}</td>
-                <td><span class="pill ${s.errors ? "bad" : "ok"}">${s.errors}</span></td>
-                <td>
-                    <div class="load-bar">
-                        <span style="width:${(s.p95 / highestP95) * 100}%; background:${barColor}"></span>
-                    </div>
-                </td>
-            </tr>`;
-    }).join("") || '<tr><td colspan="8" class="empty">Esperando datos…</td></tr>';
-}*/
-
-function renderTimes(records) {
-    const limits = [100, 300, 600, 1000, 2000, 5000];
-    const buckets = Array.from({ length: limits.length + 1 }, () => []);
-    for (const record of records) {
-        const index = limits.findIndex((limit) => record.durationMs < limit);
-        buckets[index === -1 ? limits.length : index].push(record);
-    }
-    updateChart(state.charts.histogram, state.charts.histogram.data.labels, buckets.map((list) => list.length), undefined, buckets.map((list) => topApiLines(list)));
+    
+    
 
     let stats = [...groupBy(records, (r) => r.buildingBlock + "||" + r.operation)].map(([key, list]) => {
         const [block, operation] = key.split("||");
@@ -2609,12 +2573,50 @@ function toggleErrorsPanel(open = !state.errorsPanelOpen) {
     if (open) $("#errorPanel").scrollIntoView({ behavior: "smooth", block: "start" });
 }
 
+
+/** Alterna entre tema oscuro y tema claro, persistiendo en localStorage */
+
+function toggleTheme() {
+    const body = document.body;
+    const isDark = body.getAttribute("data-theme") === "dark";
+    const nextTheme = isDark ? "light" : "dark";
+
+    body.setAttribute("data-theme", nextTheme);
+    try {
+        localStorage.setItem("obs-theme", nextTheme);
+    } catch (e) { /* ignorar si está bloqueado */ }
+
+    updateThemeUI(nextTheme);
+}
+
+function updateThemeUI(theme) {
+    const isDark = theme === "dark";
+    const icon = isDark ? "☀️" : "🌙";
+    const headerIcon = $("#themeIcon");
+    const sidebarIcon = $("#sidebarThemeIcon");
+    const sidebarText = $("#sidebarThemeText");
+
+    if (headerIcon) headerIcon.textContent = icon;
+    if (sidebarIcon) sidebarIcon.textContent = icon;
+    if (sidebarText) sidebarText.textContent = isDark ? "Cambiar a tema claro" : "Cambiar a tema oscuro";
+}
+
 function bindEvents() {
     $$(".tab-button").forEach((button) =>
         button.addEventListener("click", () => showTab(button.dataset.tab)));
 
-    $("#btnPause").addEventListener("click", togglePause);
-    $("#btnConfig").addEventListener("click", () => $("#configPanel").classList.toggle("open"));
+    $("#btnPause").addEventListener("click", togglePause);// Dentro de bindEvents() en app.js:
+    const toggleConfigSidebar = (forceState) => {
+        const panel = $("#configPanel");
+        const backdrop = $("#configBackdrop");
+        const isOpen = typeof forceState === "boolean" ? forceState : !panel.classList.contains("open");
+        panel.classList.toggle("open", isOpen);
+        backdrop.classList.toggle("open", isOpen);
+    };
+
+    $("#btnConfig").addEventListener("click", () => toggleConfigSidebar());
+    $("#btnCloseConfig")?.addEventListener("click", () => toggleConfigSidebar(false));
+    $("#configBackdrop")?.addEventListener("click", () => toggleConfigSidebar(false));
     $("#btnApply").addEventListener("click", applyConfig);
     $("#btnClear").addEventListener("click", clearData);
     $("#btnToday").addEventListener("click", backToLive);
@@ -2631,6 +2633,24 @@ function bindEvents() {
         if (event.key === "Enter" || event.key === " ") {
             event.preventDefault();
             toggleErrorsPanel();
+        }
+    });
+
+    // Botón Refresh en la esquina superior derecha de la gráfica de tiempos
+    $("#btnRefreshHistogram")?.addEventListener("click", async () => {
+        const btn = $("#btnRefreshHistogram");
+        if (btn) btn.disabled = true;
+
+        try {
+            // Si está en modo en vivo, fuerza una consulta inmediata de nuevos registros al API
+            if (!state.historyDate) {
+                clearTimeout(state.pollTimer);
+                await pollBusinessApi();
+            }
+            // Fuerza el redibujado de la gráfica y la tabla con los datos actuales en memoria
+            renderActiveTab();
+        } finally {
+            if (btn) btn.disabled = false;
         }
     });
 
@@ -2853,8 +2873,13 @@ function loadSavedConfig() {
     setEnvironment(saved.env);        // sin valor guardado usa CONFIG.defaultEnvironment
     state.demoMode = !!saved.demoMode;
 
+    const savedTheme = localStorage.getItem("obs-theme") || "dark";
+    document.body.setAttribute("data-theme", savedTheme);
+    updateThemeUI(savedTheme);
+
     showEnvironment();
     $("#inputDate").max = toIsoDate(new Date());   // no se pueden elegir días futuros
+
 }
 
 function init() {

@@ -16,12 +16,13 @@
 
     <link rel="stylesheet" href="css/styles.css">
     <link rel="stylesheet" href="css/icons.css">
+    <link rel="stylesheet" href="css/theme.css"
 
     <!-- Librería de gráficas -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
 </head>
 
-<body>
+<body data-theme="dark">
     <!-- Contenedor del aviso -->
     <div id="avisoLiquidGlass" class="overlay-glass">
         <div class="card-liquid-glass">
@@ -56,7 +57,12 @@
             <span id="statusText">Conectando…</span>
         </div>
 
-        <!-- Para agregar un botón: crea uno aquí y conéctalo en app.js, sección "EVENTOS" -->
+        <!-- Botón de Tema -->
+        <button class="btn btn-icon-theme" id="btnTheme" onclick="toggleTheme()" title="Cambiar tema claro/oscuro" aria-label="Cambiar tema">
+            <span id="themeIcon">☀️</span>
+            <span id="themeLabel">Tema</span>
+        </button>
+
         <button class="btn" id="btnPause">Pausar</button>
         <button class="btn btn-solid" id="btnConfig">Configuración</button>
     </header>
@@ -191,6 +197,9 @@
             <div class="grid grid-two">
                 <div class="card">
                     <h3>Distribución de tiempos</h3>
+                    <button type="button" id="btnRefreshHistogram" class="btn" title="Actualizar con los datos más recientes">
+                        ↻ Refresh
+                    </button>
                     <div class="chart-box"><canvas id="chartHistogram"></canvas></div>
                 </div>
                 <div class="card">
@@ -372,10 +381,6 @@
                 <input type="search" id="inputWebhookSession" placeholder="sessionDialogueIdentification">
                 <button class="btn btn-solid" id="btnWebhookSearch">Buscar</button>
             </div>
-            <p class="tab-hint">
-                Consulta GET webHookMessage con la sesión en la URL.
-                Si hay una fecha de log elegida en Configuración, también se envía como fromDate.
-            </p>
 
             <div id="webhookSummary"></div>
 
@@ -504,11 +509,6 @@
                     placeholder="processInstanceId, customProcessInstanceId o sessionDialogueIdentification">
                 <button class="btn btn-solid" id="btnBpmSearch">Buscar</button>
             </div>
-            <p class="tab-hint">
-                Dibuja los pasos de findStepProcesess. El proceso padre (customProcessInstanceId) va arriba
-                y los hijos (processInstanceId) debajo. Arrastra el diagrama con el mouse para moverte; usa la rueda del
-                ratón para hacer zoom; pulsa cualquier objeto para ver su información.
-            </p>
 
             <div id="bpmSummary"></div>
 
