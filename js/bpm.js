@@ -749,7 +749,7 @@ function bpmLaneSvg(process, width, allProcesses) {
     }
 
     // CAPA 1: Fondo del carril y líneas de flujo horizontales
-    let bgSvg = `<rect class="lane-bg ${process.role}" x="4" y="${process.top + 4}" width="${width - 8}" height="${bgHeight}" rx="16" ${isParentWrap ? 'style="fill: #F4F7FC; stroke: #8FA3ED; stroke-width: 2; stroke-dasharray: 8 6;"' : ''}/>`;
+    let bgSvg = `<rect class="lane-bg ${process.role} ${isParentWrap ? 'is-parent-wrap' : ''}" x="4" y="${process.top + 4}" width="${width - 8}" height="${bgHeight}" rx="16" />`;
     bgSvg += bpmEdgesSvg(process);
     if (!process.nodes.length) {
         bgSvg += `<text class="node-sub" x="${L.laneLabelWidth + 40}" y="${process.cy}">Sin pasos registrados para esta instancia</text>`;
@@ -816,13 +816,13 @@ function bpmDiagramSvg(processes) {
                 </rect>`;
     }).join("");
 
-    const glassPanel = `<g class="lane-sticky-header">`
-        + `<foreignObject x="0" y="0" width="${glassWidth}" height="${height}" style="pointer-events:none;">`
-        + `<div xmlns="http://www.w3.org/1999/xhtml" style="width:100%; height:100%; background: rgba(255, 255, 255, 0.55); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); border-right: 1px solid rgba(0,0,0,0.08); box-shadow: 4px 0 16px rgba(0,0,0,0.05);"></div>`
-        + `</foreignObject>`
-        + laneHeaders
-        + clickZones
-        + `</g>`;
+   const glassPanel = `<g class="lane-sticky-header">`
+    + `<foreignObject x="0" y="0" width="${glassWidth}" height="${height}" style="pointer-events:none;">`
+    + `<div xmlns="http://www.w3.org/1999/xhtml" class="bpm-glass-panel"></div>` // <-- Cambia el style por una clase
+    + `</foreignObject>`
+    + laneHeaders
+    + clickZones
+    + `</g>`;
 
     return `<svg width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" role="img" aria-label="Diagrama BPM" style="transform-origin: top left;">`
         + `<defs>${marker("arrow", "#98A6BD")}${marker("arrowRed", "#EF5B5B")}${marker("arrowLink", "#4F6BED")}</defs>`

@@ -515,18 +515,13 @@
             <div class="card bpm-card" id="bpmCardContainer">
 
                 <!-- Controles de Zoom y Pantalla Completa -->
-                <div class="bpm-controls"
-                    style="display: flex; gap: 8px; padding: 10px 20px; border-bottom: 1px solid var(--line); justify-content: flex-end; background: #fafafa;">
-                    <!-- Agrega este botón junto a los de zoom y pantalla completa -->
+                <div class="bpm-controls">
                     <button id="btnBpmReload" class="btn" title="Recargar diagrama con nuevos datos">↻ Recargar</button>
                     <button class="btn" id="btnBpmZoomOut" title="Alejar">-</button>
-                    <span id="bpmZoomLevel"
-                        style="line-height: 34px; font-size: 13px; font-weight: 600; min-width: 45px; text-align: center;">100%</span>
+                    <span id="bpmZoomLevel" class="bpm-zoom-level">100%</span>
                     <button class="btn" id="btnBpmZoomIn" title="Acercar">+</button>
                     <button class="btn" id="btnBpmResetZoom" title="Restablecer">1:1</button>
-                    <div style="width: 10px;"></div>
-                    <button class="btn btn-solid" id="btnBpmFullscreen" title="Pantalla Completa">⛶ Pantalla
-                        Completa</button>
+                    <button class="btn btn-solid bpm-btn-fullscreen" id="btnBpmFullscreen" title="Pantalla Completa">⛶ Pantalla Completa</button>
                 </div>
 
                 <!-- Leyenda de objetos BPM (prefijo del nombre del paso) -->
