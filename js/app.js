@@ -29,7 +29,7 @@ const CONFIG = {
         PROD: { host: "http://10.208.20.246:5565", user: "Administrator", password: "AbIeLifi" },
     },
     defaultEnvironment: "QA",
-    reportsPath: "/rad/PD_CFG_Administracion.api:reportes_API",   // se agrega al host del ambiente
+    basePath: "/rad/endpoints:api",   // se agrega al host del ambiente
 
     // Qué APIs envían el header Authorization (true) y cuáles no (false).
     // Las llaves coinciden con los nombres de endpoints.
@@ -38,8 +38,8 @@ const CONFIG = {
         business: "/business?operation=convert",
         responses: "/searchResponses?sessionDialogueIdentification=",
         webhook: "/webHookMessage?sessionDialogueIdentification=",   // GET, sin autenticación
-        taskData: "/rad/BC_SRV_Transversales.monitoring.api:monitoring_rad/getTaskData",   // GET ?taskId=
-        findSteps: "/rad/BC_SRV_Transversales.monitoring.api:monitoring_rad/findStepProcesess",   // GET ?instanceID=
+        taskData: "/getTaskData",   // GET ?taskId=
+        findSteps: "/findStepProcesess",   // GET ?instanceID=
     },
 
     logRequests: false,       // true = imprime en la consola la URL de cada petición
@@ -242,7 +242,7 @@ function currentEnvironment() {
 /** Cambia el ambiente activo y recalcula la URL base. */
 function setEnvironment(name) {
     state.env = CONFIG.environments[name] ? name : CONFIG.defaultEnvironment;
-    state.baseUrl = currentEnvironment().host + CONFIG.reportsPath;
+    state.baseUrl = currentEnvironment().host + CONFIG.basePath;
 }
 
 /** Header Authorization (Basic) con las credenciales del ambiente activo. */
